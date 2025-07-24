@@ -7,8 +7,22 @@ from typing import Optional
 class Settings(BaseSettings):
     """Application settings."""
 
-    # OpenAI Configuration
+    # API Keys
+    api_key: str
     openai_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+    anthropic_api_key: str
+    
+    # Stack Auth Configuration
+    stack_project_id: str
+    stack_publishable_client_key: str
+    stack_secret_server_key: str
+
+    # Database Configuration
+    database_url: str
+
+    # LLM Configuration
+    max_allowed_tokens: int = 20_000
 
     # Application Configuration
     app_name: str = "SALLTO Herald API Gateway"
@@ -27,11 +41,32 @@ class Settings(BaseSettings):
         case_sensitive = False
 
 
+def configure_logging():
+    """Configure logging for the application."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    )
+
+
 @lru_cache()
 def get_settings() -> Settings:
-    """Get cached settings."""
+    """
+    Get cached settings.
+    
+    Returns:
+        Settings: Application settings loaded from environment variables.
+        
+    Raises:
+        ValueError: If required environment variables are missing.
+    """
+    configure_logging()
+    logger = logging.getLogger("config")
+    
     try:
-        return Settings()
+        settings = Settings()
+        logger.info(f"Loaded settings for {settings.app_name}")
+        return settings
     except Exception as e:
-        logging.error(f"Failed to load settings: {e}")
-        raise
+        logger.error(f"Failed to load settings: {e}")
+        raise ValueError(f"Configuration error: {e}. Please check your environment variables.")

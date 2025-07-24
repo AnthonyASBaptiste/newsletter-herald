@@ -1,14 +1,26 @@
-from dotenv import load_dotenv
+import logging
 from fastapi import Request, HTTPException
-import os
+from config import get_settings
 
-load_dotenv()
+# Get settings from centralized configuration
+settings = get_settings()
 
-API_KEY = os.getenv("API_KEY", "super-secret-key")
-if not API_KEY:
-    raise ValueError("API_KEY environment variable is not set")
+# Create a logger for this module
+logger = logging.getLogger(__name__)
 
 def verify_api_key(request: Request):
+    """
+    Verify that the request contains a valid API key in the Authorization header.
+    
+    Args:
+        request: The FastAPI request object
+        
+    Raises:
+        HTTPException: If the API key is missing or invalid
+    """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or auth_header != f"Bearer {API_KEY}":
+    if not auth_header or auth_header != f"Bearer {settings.api_key}":
+        logger.warning("Unauthorized API request attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    logger.debug("API key verified successfully")
