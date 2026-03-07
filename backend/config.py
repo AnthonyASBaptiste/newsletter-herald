@@ -23,6 +23,8 @@ class Settings(BaseSettings):
 
     # LLM Configuration
     max_allowed_tokens: int = 20_000
+    llm_strategy: str = "auto"  # Choices: auto, local, remote
+    ollama_base_url: str = "http://localhost:11434"
 
     # Application Configuration
     app_name: str = "SALLTO Herald API Gateway"

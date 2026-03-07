@@ -35,7 +35,7 @@ def summarize_with_mistral(prompt: str, timeout: int = 30) -> str:
     
     try:
         response = requests.post(
-            "http://localhost:11434/api/generate",
+            f"{settings.ollama_base_url}/api/generate",
             timeout=timeout,
             json={
                 "model": "mistral",
@@ -160,14 +160,23 @@ def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    if token_estimate > 5000:
+    # Determine which model to use based on strategy and token count
+    use_claude = False
+    if settings.llm_strategy == "remote":
+        use_claude = True
+    elif settings.llm_strategy == "local":
+        use_claude = False
+    else:  # auto strategy
+        use_claude = token_estimate > 5000
+
+    if use_claude:
         model = "claude"
-        logger.info(f"Using Claude model for summarization (tokens: {token_estimate})")
+        logger.info(f"Using Claude model for summarization (strategy: {settings.llm_strategy}, tokens: {token_estimate})")
         summary = summarize_with_claude(prompt)
         cost_estimate = (token_estimate / 1000) * 0.015  # Claude Opus @ ~$15/M tokens
     else:
         model = "mistral"
-        logger.info(f"Using Mistral model for summarization (tokens: {token_estimate})")
+        logger.info(f"Using Mistral model for summarization (strategy: {settings.llm_strategy}, tokens: {token_estimate})")
         summary = summarize_with_mistral(prompt)
         cost_estimate = 0  # Free via Ollama
 
