@@ -13,48 +13,48 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-def summarize_with_mistral(prompt: str, timeout: int = 30) -> str:
+def summarize_with_model(prompt: str, timeout: int = 30) -> str:
     """
-    Summarizes a given text input using the Mistral model by making a POST request to
-    a local endpoint. The method expects a text prompt, sends it to the Mistral API for
+    Summarizes a given text input using a local Ollama model by making a POST request to
+    a local endpoint. The method expects a text prompt, sends it to the model API for
     processing, and returns the generated summary.
 
     Args:
         prompt: The input text to be summarized.
         timeout: The maximum time, in seconds, to await a response from the
-            Mistral API. If not specified, defaults to 30 seconds.
+            model API. If not specified, defaults to 30 seconds.
 
     Returns:
         str: The generated summary based on the given prompt.
 
     Raises:
-        Exception: If the response status code from the Mistral API is not 200, an
+        Exception: If the response status code from the model API is not 200, an
             exception is raised with the error details from the API.
     """
-    logger.debug("Sending request to Mistral API")
-    
+    logger.debug("Sending request to model API")
+
     try:
         response = requests.post(
             f"{settings.ollama_base_url}/api/generate",
             timeout=timeout,
             json={
-                "model": "mistral",
+                "model": "deepseek-r1:8b",
                 "prompt": prompt,
                 "stream": False,
             }
         )
 
         if response.status_code != 200:
-            error_msg = f"Mistral error: {response.text}"
+            error_msg = f"Model error: {response.text}"
             logger.error(error_msg)
             raise Exception(error_msg)
 
         data = response.json()
-        logger.debug("Successfully received response from Mistral API")
+        logger.debug("Successfully received response from model API")
         return data["response"].strip()
-        
+
     except requests.exceptions.RequestException as e:
-        error_msg = f"Request to Mistral API failed: {str(e)}"
+        error_msg = f"Request to model API failed: {str(e)}"
         logger.error(error_msg)
         raise Exception(error_msg)
 
@@ -175,13 +175,13 @@ def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
         summary = summarize_with_claude(prompt)
         cost_estimate = (token_estimate / 1000) * 0.015  # Claude Opus @ ~$15/M tokens
     else:
-        model = "mistral"
-        logger.info(f"Using Mistral model for summarization (strategy: {settings.llm_strategy}, tokens: {token_estimate})")
-        summary = summarize_with_mistral(prompt)
+        model = "deepseek-r1:8b"
+        logger.info(f"Using local model for summarization (strategy: {settings.llm_strategy}, tokens: {token_estimate})")
+        summary = summarize_with_model(prompt)
         cost_estimate = 0  # Free via Ollama
 
     logger.debug(f"Summary generated successfully using {model} model")
-    
+
     return {
         "summary": summary,
         "model": model,
