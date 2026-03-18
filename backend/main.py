@@ -1,13 +1,16 @@
 import logging
 import tempfile
 import os
+import io
 from typing import Dict
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from helpers.key_utils import verify_api_key
-from helpers.text_utils import extract_text_from_file
+from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
+from helpers.storage import upload_to_drive
 
 from llm.providers import choose_llm_and_summarize
 
@@ -27,9 +30,6 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """
     Lifecycle manager for the FastAPI application.
-    
-    Args:
-        app: The FastAPI application instance
     """
     # Startup
     logger.info("Starting up application")
@@ -49,14 +49,20 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.get("/")
 async def root() -> Dict[str, str]:
     """
     A simple endpoint to confirm the API is running.
-    
-    Returns:
-        Dict[str, str]: A welcome message
     """
     logger.debug("Root endpoint accessed")
     return {"message": f"Welcome to your {settings.app_name}"}
@@ -68,21 +74,7 @@ async def upload_summary(
     _: None = Depends(verify_api_key)
 ) -> JSONResponse:
     """
-    Handles the uploading and summarization of document files through an HTTP POST endpoint.
-    The function accepts a PDF or DOCX file, extracts its textual content, and generates
-    a summary using a language model.
-
-    Args:
-        file: An instance of UploadFile containing the uploaded document. Accepted
-            file types are "application/pdf" and
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document".
-        _: Dependency to verify the API key
-        
-    Returns:
-        JSONResponse: A response containing the generated summary of the document.
-        
-    Raises:
-        HTTPException: If the file type is unsupported or if an error occurs during processing
+    Handles the uploading and summarization of document files.
     """
     logger.info(f"Processing uploaded file: {file.filename} ({file.content_type})")
     
@@ -101,7 +93,6 @@ async def upload_summary(
     # Extract text from file
     try:
         if file.content_type == "application/pdf":
-            # Use a secure temporary file
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
                 temp_file_path = temp_file.name
                 temp_file.write(contents)
@@ -109,12 +100,9 @@ async def upload_summary(
             try:
                 text = extract_text_from_file(temp_file_path, file_type="pdf")
             finally:
-                # Ensure the temporary file is removed
                 if os.path.exists(temp_file_path):
                     os.unlink(temp_file_path)
-                    logger.debug(f"Temporary file removed: {temp_file_path}")
         else:
-            # Reset file position for docx processing
             file.file.seek(0)
             text = extract_text_from_file(file.file, file_type="docx")
             
@@ -128,12 +116,40 @@ async def upload_summary(
         logger.info("Generating summary using LLM")
         summary = choose_llm_and_summarize(text)
         
+        # Sanitize and standardize filename
+        standard_filename = sanitize_filename(file.filename)
+        logger.info(f"Standardized filename: {standard_filename}")
+
+        # Compress file if it's a PDF
+        final_contents = contents
+        if file.content_type == "application/pdf":
+            logger.info("Compressing PDF...")
+            final_contents = compress_pdf(contents)
+
+        # Upload to Google Drive
+        logger.info("Uploading file to Google Drive")
+        drive_file_id, web_view_link = upload_to_drive(final_contents, standard_filename, file.content_type)
+
+        # Generate and upload thumbnail if it's a PDF
+        thumbnail_drive_id = None
+        if file.content_type == "application/pdf":
+            try:
+                logger.info("Generating PDF thumbnail")
+                thumbnail_data = generate_pdf_thumbnail(io.BytesIO(final_contents))
+                thumbnail_filename = f"thumb_{standard_filename}.png"
+                thumbnail_drive_id, _ = upload_to_drive(thumbnail_data, thumbnail_filename, "image/png")
+            except Exception as thumb_err:
+                logger.error(f"Failed to generate thumbnail: {thumb_err}")
+
         # First, store newsletter information
         logger.debug("Storing newsletter information in database")
         newsletter_id = await database.execute(
             newsletters.insert().values(
-                filename=file.filename,
-                uploader="api_user",  # You might want to get this from auth
+                filename=standard_filename,
+                drive_file_id=drive_file_id,
+                drive_web_view_link=web_view_link,
+                thumbnail_drive_id=thumbnail_drive_id,
+                uploader="api_user",
                 delivered=False
             )
         )
@@ -143,6 +159,7 @@ async def upload_summary(
         summary_id = await database.execute(
             summaries.insert().values(
                 newsletter_id=newsletter_id,
+                title=summary["title"],
                 summary=summary["summary"],
             )
         )
@@ -158,8 +175,48 @@ async def upload_summary(
         )
         
         logger.info(f"Summary generated and stored successfully (Newsletter ID: {newsletter_id}, Summary ID: {summary_id})")
+        
+        # Add drive info to response
+        summary["thumbnail_drive_id"] = thumbnail_drive_id
+        summary["drive_file_id"] = drive_file_id
+        summary["drive_web_view_link"] = web_view_link
     except Exception as e:
         logger.error(f"LLM error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
     return JSONResponse(content={"summary": summary})
+
+
+@app.get("/newsletters")
+async def get_newsletters() -> JSONResponse:
+    """
+    Fetches all newsletters and their associated summaries from the database.
+    """
+    logger.info("Fetching all newsletters from the database")
+    try:
+        query = """
+            SELECT 
+                n.id, n.filename, n.drive_web_view_link, n.thumbnail_drive_id, n.uploaded_at,
+                s.title, s.summary
+            FROM newsletters n
+            LEFT JOIN summaries s ON n.id = s.newsletter_id
+            ORDER BY n.uploaded_at DESC
+        """
+        rows = await database.fetch_all(query)
+        
+        result = []
+        for row in rows:
+            result.append({
+                "id": row["id"],
+                "filename": row["filename"],
+                "drive_link": row["drive_web_view_link"],
+                "thumbnail_id": row["thumbnail_drive_id"],
+                "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
+                "title": row["title"],
+                "summary": row["summary"]
+            })
+            
+        return JSONResponse(content={"newsletters": result})
+    except Exception as e:
+        logger.error(f"Error fetching newsletters: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching newsletters: {e}")

@@ -13,34 +13,28 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
-def summarize_with_model(prompt: str, timeout: int = 30) -> str:
+def summarize_with_model(prompt: str, timeout: int = 300) -> Dict[str, str]:
     """
-    Summarizes a given text input using a local Ollama model by making a POST request to
-    a local endpoint. The method expects a text prompt, sends it to the model API for
-    processing, and returns the generated summary.
-
-    Args:
-        prompt: The input text to be summarized.
-        timeout: The maximum time, in seconds, to await a response from the
-            model API. If not specified, defaults to 30 seconds.
-
-    Returns:
-        str: The generated summary based on the given prompt.
-
-    Raises:
-        Exception: If the response status code from the model API is not 200, an
-            exception is raised with the error details from the API.
+    Summarizes a given text input using a local Ollama model.
+    Returns: Dict containing 'title' and 'summary'.
     """
     logger.debug("Sending request to model API")
+
+    system_instruction = (
+        "You are a helpful assistant that summarizes Roman Catholic church newsletters into warm, concise 2-paragraph email messages for parishioners. "
+        "Return your response in JSON format with two keys: 'title' (a concise subject line like '4th Sunday of Lent – Living as Children of the Light') and 'summary' (the 2-paragraph email body)."
+    )
+    full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
 
     try:
         response = requests.post(
             f"{settings.ollama_base_url}/api/generate",
             timeout=timeout,
             json={
-                "model": "deepseek-r1:8b",
-                "prompt": prompt,
+                "model": settings.ollama_model,
+                "prompt": full_prompt,
                 "stream": False,
+                "format": "json"
             }
         )
 
@@ -50,37 +44,22 @@ def summarize_with_model(prompt: str, timeout: int = 30) -> str:
             raise Exception(error_msg)
 
         data = response.json()
-        logger.debug("Successfully received response from model API")
-        return data["response"].strip()
+        import json
+        resp_data = json.loads(data["response"])
+        return {
+            "title": resp_data.get("title", "Church Newsletter"),
+            "summary": resp_data.get("summary", "")
+        }
 
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         error_msg = f"Request to model API failed: {str(e)}"
         logger.error(error_msg)
         raise Exception(error_msg)
 
 
-def summarize_with_claude(prompt: str, timeout: int = 30) -> str:
+def summarize_with_claude(prompt: str, timeout: int = 300) -> Dict[str, str]:
     """
-    Summarizes Roman Catholic Church newsletters into concise and warm email messages
-    using the Claude model via the Anthropic API. This function leverages the
-    Anthropic Claude-3 Opus model to process user-provided newsletter texts and produce
-    summarized output with adjusted creativity and token limits.
-
-    Args:
-        prompt: The input text to be summarized, typically a Roman Catholic
-            Church newsletter in plain text format.
-        timeout: The maximum time, in seconds, to await a response from the
-            Anthropic API. If not specified, defaults to 30 seconds.
-
-    Returns:
-        str: A summarized version of the input text, formatted as a concise email
-            message.
-
-    Raises:
-        ValueError: If the required `ANTHROPIC_API_KEY` environment variable
-            is not set.
-        Exception: For API-level errors, unexpected response formats, or any
-            HTTP request-related failures.
+    Summarizes using Claude. Returns: Dict containing 'title' and 'summary'.
     """
     if not settings.anthropic_api_key:
         error_msg = "ANTHROPIC_API_KEY environment variable is not set"
@@ -97,7 +76,7 @@ def summarize_with_claude(prompt: str, timeout: int = 30) -> str:
         "model": "claude-opus-4-20250514",
         "max_tokens": settings.max_allowed_tokens,
         "temperature": 0.7,
-        "system": "You are a helpful assistant that summarizes Roman Catholic church newsletters into warm, concise email messages",
+        "system": "Summarize the newsletter. Return ONLY a JSON object with 'title' (a warm subject line) and 'summary' (2-paragraph email body).",
         "messages": [
             {"role": "user", "content": prompt}
         ]
@@ -113,44 +92,73 @@ def summarize_with_claude(prompt: str, timeout: int = 30) -> str:
         response.raise_for_status()
 
         data = response.json()
+        import json
+        resp_data = json.loads(data["content"][0]["text"])
+        return {
+            "title": resp_data.get("title", "Church Newsletter"),
+            "summary": resp_data.get("summary", "")
+        }
 
-        # Check for API-level errors
-        if "error" in data:
-            error_msg = f"Claude API error: {data['error']}"
-            logger.error(error_msg)
-            raise Exception(error_msg)
-
-        return data["content"][0]["text"].strip()
-
-    except requests.exceptions.RequestException as e:
-        error_msg = f"Request to Claude API failed: {str(e)}"
+    except Exception as e:
+        error_msg = f"Claude API failed: {str(e)}"
         logger.error(error_msg)
-        # Log the response content for debugging
-        if hasattr(e, 'response') and e.response is not None:
-            logger.error(f"Response content: {e.response.text}")
-
         raise Exception(error_msg)
-    except KeyError as e:
-        error_msg = f"Unexpected response format from Claude API: {str(e)}"
+
+
+def summarize_with_groq(prompt: str, timeout: int = 60) -> Dict[str, str]:
+    """
+    Summarizes using Groq. Returns: Dict containing 'title' and 'summary'.
+    """
+    if not settings.groq_api_key:
+        error_msg = "GROQ_API_KEY environment variable is not set"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    headers = {
+        "Authorization": f"Bearer {settings.groq_api_key}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": settings.groq_model,
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant that summarizes Roman Catholic church newsletters. Return your response as a JSON object with two keys: 'title' (a warm, descriptive subject line) and 'summary' (a warm, 2-paragraph email message)."},
+            {"role": "user", "content": prompt}
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.7,
+        "max_tokens": 1024
+    }
+
+    try:
+        response = requests.post(
+            "https://api.groq.com/openai/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=timeout
+        )
+        response.raise_for_status()
+
+        data = response.json()
+        import json
+        resp_data = json.loads(data["choices"][0]["message"]["content"])
+        return {
+            "title": resp_data.get("title", "Church Newsletter"),
+            "summary": resp_data.get("summary", "")
+        }
+
+    except Exception as e:
+        error_msg = f"Groq API failed: {str(e)}"
         logger.error(error_msg)
         raise Exception(error_msg)
 
 
 def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
     """
-    Summarizes a given text into a 2-paragraph email message using an appropriate language model
-    based on token count. Returns the summary, model used, token count, and estimated cost.
-
-    Args:
-        text: The text content to be summarized.
-
-    Returns:
-        Dict[str, Any]: A dictionary containing the summary, model used, token count, and cost estimate in USD.
-
-    Raises:
-        ValueError: If the token count exceeds the maximum allowed limit.
+    Summarizes a given text into a title and a 2-paragraph email message.
+    Respects the configured LLM strategy.
     """
-    prompt = f"Summarize this church newsletter into a 2-paragraph email message: {text}"
+    prompt = f"Summarize this church newsletter: {text}"
     token_estimate = count_tokens(prompt)
 
     logger.info(f"Estimated tokens: {token_estimate}")
@@ -160,30 +168,45 @@ def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
         logger.error(error_msg)
         raise ValueError(error_msg)
 
-    # Determine which model to use based on strategy and token count
-    use_claude = False
-    if settings.llm_strategy == "remote":
-        use_claude = True
-    elif settings.llm_strategy == "local":
-        use_claude = False
-    else:  # auto strategy
-        use_claude = token_estimate > 5000
+    strategy = settings.llm_strategy.lower()
 
-    if use_claude:
-        model = "claude"
-        logger.info(f"Using Claude model for summarization (strategy: {settings.llm_strategy}, tokens: {token_estimate})")
-        summary = summarize_with_claude(prompt)
-        cost_estimate = (token_estimate / 1000) * 0.015  # Claude Opus @ ~$15/M tokens
+    # Explicit strategy overrides
+    if strategy == "groq" and settings.groq_api_key:
+        model = f"{settings.groq_model} (Groq)"
+        logger.info(f"Forcing Groq ({settings.groq_model})")
+        res = summarize_with_groq(prompt)
+        cost_estimate = 0
+    elif strategy == "local":
+        model = f"{settings.ollama_model} (Ollama)"
+        logger.info(f"Forcing Local Model ({settings.ollama_model})")
+        res = summarize_with_model(prompt)
+        cost_estimate = 0
+    elif strategy == "remote":
+        model = "claude (Anthropic)"
+        logger.info("Forcing Remote Model (Claude)")
+        res = summarize_with_claude(prompt)
+        cost_estimate = (token_estimate / 1000) * 0.015
     else:
-        model = "deepseek-r1:8b"
-        logger.info(f"Using local model for summarization (strategy: {settings.llm_strategy}, tokens: {token_estimate})")
-        summary = summarize_with_model(prompt)
-        cost_estimate = 0  # Free via Ollama
-
-    logger.debug(f"Summary generated successfully using {model} model")
+        # Auto strategy or default fallback
+        if token_estimate > 5000:
+            model = "claude (Anthropic)"
+            logger.info(f"Token count {token_estimate} > 5000, using Claude")
+            res = summarize_with_claude(prompt)
+            cost_estimate = (token_estimate / 1000) * 0.015
+        elif settings.groq_api_key and strategy == "auto":
+            model = f"{settings.groq_model} (Groq)"
+            logger.info(f"Auto strategy: using Groq ({settings.groq_model})")
+            res = summarize_with_groq(prompt)
+            cost_estimate = 0
+        else:
+            model = f"{settings.ollama_model} (Ollama)"
+            logger.info(f"Auto strategy: using Local Model ({settings.ollama_model})")
+            res = summarize_with_model(prompt)
+            cost_estimate = 0
 
     return {
-        "summary": summary,
+        "title": res["title"],
+        "summary": res["summary"],
         "model": model,
         "tokens": token_estimate,
         "cost_usd_estimate": round(cost_estimate, 4)

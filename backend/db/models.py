@@ -10,6 +10,9 @@ newsletters = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("filename", String),
+    Column("drive_file_id", String, nullable=True),
+    Column("drive_web_view_link", String, nullable=True),
+    Column("thumbnail_drive_id", String, nullable=True),
     Column("uploader", String),
     Column("uploaded_at", DateTime(timezone=True), server_default=func.now()),
     Column("schedule_date", Date, nullable=True),
@@ -21,6 +24,7 @@ summaries = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("newsletter_id", Integer, ForeignKey("newsletters.id"), unique=True),
+    Column("title", String, nullable=True),
     Column("summary", Text),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
 )

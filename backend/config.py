@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
     anthropic_api_key: str
+    groq_api_key: Optional[str] = None
+    groq_model: str = "llama-3.3-70b-versatile"
     
     # Stack Auth Configuration
     stack_project_id: str
@@ -21,10 +23,24 @@ class Settings(BaseSettings):
     # Database Configuration
     database_url: str
 
+    # Google Drive Configuration
+    google_service_account_json: Optional[str] = None
+    google_drive_folder_id: Optional[str] = None
+    
+    # Cloudflare R2 / S3 Configuration
+    r2_endpoint_url: Optional[str] = None
+    r2_access_key_id: Optional[str] = None
+    r2_secret_access_key: Optional[str] = None
+    r2_bucket_name: Optional[str] = None
+    r2_public_domain: Optional[str] = None  # Optional: for public URLs
+
     # LLM Configuration
     max_allowed_tokens: int = 20_000
-    llm_strategy: str = "auto"  # Choices: auto, local, remote
+    llm_strategy: str = "auto"  # Choices: auto, local, remote, groq
     ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3"
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_api_key: Optional[str] = None
 
     # Application Configuration
     app_name: str = "SALLTO Herald API Gateway"

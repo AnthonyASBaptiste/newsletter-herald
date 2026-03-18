@@ -1,8 +1,8 @@
-
 from sqlalchemy import MetaData
 from databases import Database
-from helpers.constants import DATABASE_URL
+from config import get_settings
 
+settings = get_settings()
 
-database = Database(DATABASE_URL)
+database = Database(settings.database_url)
 metadata = MetaData()
