@@ -118,7 +118,7 @@ async def check_and_deliver():
             logger.info(f"Newsletter {item['id']} delivery run complete. Sent: {sent_count}, Failed: {failed_count}")
             
             # Send notification report to local agent queue
-            notify_agent("delivery_report", {
+            await notify_agent("delivery_report", {
                 "id": item['id'],
                 "title": item['title'],
                 "sent_count": sent_count,

@@ -1,55 +1,48 @@
 import os
-import json
 import sys
+import requests
+from dotenv import load_dotenv
 
-# Get root directory
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-QUEUE_FILE_PATH = os.path.join(PROJECT_ROOT, "notifications_queue.json")
-ARCHIVE_FILE_PATH = os.path.join(PROJECT_ROOT, "notifications_archive.json")
+# Load environment variables
+load_dotenv()
 
 def poll_notifications():
-    if not os.path.exists(QUEUE_FILE_PATH):
-        return
+    # Load backend URL and API key from environment variables
+    # Defaults to localhost for development
+    backend_url = os.getenv("BACKEND_API_URL", "http://localhost:8000")
+    api_key = os.getenv("API_KEY")
+    
+    if not api_key:
+        sys.stderr.write("Error: API_KEY environment variable is not set.\n")
+        sys.exit(1)
         
+    url = f"{backend_url.rstrip('/')}/notifications/poll"
+    headers = {
+        "X-API-Key": api_key,
+        "Authorization": f"Bearer {api_key}" # Provide both formats for compatibility
+    }
+    
     try:
-        # 1. Read queue
-        queue = []
-        with open(QUEUE_FILE_PATH, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if content:
-                queue = json.loads(content)
-                
-        if not queue:
+        response = requests.get(url, headers=headers, timeout=30)
+        
+        if response.status_code == 401:
+            sys.stderr.write("Error: Unauthorized. Check your API_KEY configuration.\n")
+            sys.exit(1)
+            
+        response.raise_for_status()
+        data = response.json()
+        
+        notifications = data.get("notifications", [])
+        if not notifications:
             return
             
-        # 2. Output messages to stdout (using utf-8 write to avoid Windows cp1252 encoding errors)
-        for event in queue:
+        for event in notifications:
             msg = event.get("formatted_message", "")
             if msg:
                 sys.stdout.buffer.write((msg + "\n---\n").encode("utf-8"))
                 
-        # 3. Move queued events to archive
-        archive = []
-        if os.path.exists(ARCHIVE_FILE_PATH):
-            try:
-                with open(ARCHIVE_FILE_PATH, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        archive = json.loads(content)
-            except Exception:
-                pass
-                
-        archive.extend(queue)
-        
-        with open(ARCHIVE_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(archive, f, indent=2, ensure_ascii=False)
-            
-        # 4. Clear queue
-        with open(QUEUE_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump([], f, indent=2)
-            
     except Exception as e:
-        sys.stderr.write(f"Error polling notifications: {e}\n")
+        sys.stderr.write(f"Error polling notifications from {url}: {e}\n")
 
 if __name__ == "__main__":
     poll_notifications()

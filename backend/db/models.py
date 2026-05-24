@@ -62,3 +62,12 @@ delivery_logs = Table(
     Column("error_message", Text, nullable=True),
     Column("timestamp", DateTime(timezone=True), server_default=func.now()),
 )
+
+agent_notifications = Table(
+    "agent_notifications",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("event_type", String, nullable=False),
+    Column("payload", Text, nullable=False), # JSON payload
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)

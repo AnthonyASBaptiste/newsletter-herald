@@ -2,6 +2,8 @@ import logging
 import tempfile
 import os
 import io
+import json
+import asyncio
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
@@ -220,7 +222,7 @@ async def upload_summary(
 
         # Notify local agent of the review request or validation failure
         if is_valid:
-            notify_agent("review_request", {
+            await notify_agent("review_request", {
                 "newsletter_id": newsletter_id,
                 "title": summary["title"],
                 "summary": summary["summary"],
@@ -228,7 +230,7 @@ async def upload_summary(
                 "status": status
             })
         else:
-            notify_agent("validation_alert", {
+            await notify_agent("validation_alert", {
                 "newsletter_id": newsletter_id,
                 "filename": standard_filename,
                 "target_sunday": target_sunday,
@@ -395,7 +397,7 @@ async def regenerate_newsletter_summary(newsletter_id: int):
         await database.execute(update_query)
         
         # 6. Notify agent of the regenerated review request
-        notify_agent("review_request", {
+        await notify_agent("review_request", {
             "newsletter_id": newsletter_id,
             "title": summary_data["title"],
             "summary": summary_data["summary"],
@@ -486,4 +488,48 @@ async def unsubscribe_user(data: SubscriberRequest):
     except Exception as e:
         logger.error(f"Error unsubscribing email: {e}")
         raise HTTPException(status_code=500, detail="Error unsubscribing email")
+
+
+@app.get("/notifications/poll")
+async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONResponse:
+    """
+    Polled by the local agent (Hortense) to fetch pending notifications.
+    Deletes notifications from the database after returning them.
+    """
+    from db.models import agent_notifications
+    try:
+        # 1. Fetch all pending notifications
+        query = select(agent_notifications).order_by(agent_notifications.c.created_at.asc())
+        rows = await database.fetch_all(query)
+        
+        result = []
+        for row in rows:
+            result.append(json.loads(row["payload"]))
+            
+        # 2. Delete the fetched notifications
+        if rows:
+            ids = [row["id"] for row in rows]
+            delete_query = agent_notifications.delete().where(agent_notifications.c.id.in_(ids))
+            await database.execute(delete_query)
+            
+        return JSONResponse(content={"notifications": result})
+    except Exception as e:
+        logger.error(f"Error polling agent notifications: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching notifications")
+
+
+@app.post("/deliver")
+async def trigger_newsletter_delivery(_: None = Depends(verify_api_key)) -> JSONResponse:
+    """
+    Triggers the delivery worker process manually (or via cloud cron).
+    """
+    from scripts.delivery_worker import check_and_deliver
+    logger.info("Manual delivery trigger initiated via API")
+    try:
+        # Run delivery worker check_and_deliver logic asynchronously
+        asyncio.create_task(check_and_deliver())
+        return JSONResponse(content={"status": "Delivery run initiated in background"})
+    except Exception as e:
+        logger.error(f"Failed to initiate delivery: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 

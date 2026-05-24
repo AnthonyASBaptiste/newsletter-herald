@@ -1,4 +1,3 @@
-import os
 import json
 import logging
 import datetime
@@ -8,19 +7,16 @@ from config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Path to the notifications queue at the root of the project
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-QUEUE_FILE_PATH = os.path.join(PROJECT_ROOT, "notifications_queue.json")
-
-def notify_agent(event_type: str, data: Dict[str, Any]):
+async def notify_agent(event_type: str, data: Dict[str, Any]):
     """
-    Appends a new notification event to the local queue file.
-    Your local agent can poll this file to forward messages to WhatsApp/Signal.
+    Asynchronously inserts a new notification event into the database.
+    Your local agent Hortense can fetch this via a REST API endpoint.
     """
     event_id = data.get("newsletter_id") or data.get("id") or int(datetime.datetime.now().timestamp())
     
     # Base URLs for callbacks
-    base_url = f"http://localhost:{settings.api_port}"
+    # In production, use the production domain if available, fallback to settings
+    base_url = f"https://{settings.r2_public_domain}" if settings.r2_public_domain else f"http://localhost:{settings.api_port}"
     
     event = {
         "event_id": event_id,
@@ -37,7 +33,7 @@ def notify_agent(event_type: str, data: Dict[str, Any]):
         }
     }
     
-    # Format a human-readable message for easy agent parsing
+    # Format a human-readable message for Signal/WhatsApp
     if event_type == "review_request":
         event["formatted_message"] = (
             f"🔔 *New Newsletter Summary for Review*\n\n"
@@ -73,25 +69,18 @@ def notify_agent(event_type: str, data: Dict[str, Any]):
         event["formatted_message"] = f"Notification Alert: {event_type} - {event['title']}"
 
     try:
-        # Load existing queue or create new
-        queue = []
-        if os.path.exists(QUEUE_FILE_PATH):
-            try:
-                with open(QUEUE_FILE_PATH, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        queue = json.loads(content)
-            except Exception as read_err:
-                logger.error(f"Failed to read existing queue file: {read_err}")
-                
-        # Append and save
-        queue.append(event)
+        from db.setup import database
+        from db.models import agent_notifications
         
-        with open(QUEUE_FILE_PATH, "w", encoding="utf-8") as f:
-            json.dump(queue, f, indent=2, ensure_ascii=False)
-            
-        logger.info(f"Agent notification written to queue: {event_type} (ID: {event_id})")
+        # Insert event into the database table
+        query = agent_notifications.insert().values(
+            event_type=event_type,
+            payload=json.dumps(event)
+        )
+        await database.execute(query)
+        
+        logger.info(f"Agent notification written to DB: {event_type} (ID: {event_id})")
         return True
     except Exception as e:
-        logger.error(f"Failed to write agent notification: {e}")
+        logger.error(f"Failed to write agent notification to DB: {e}")
         return False
