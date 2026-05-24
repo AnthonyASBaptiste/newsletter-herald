@@ -4,15 +4,16 @@ import os
 import io
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from helpers.key_utils import verify_api_key
 from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
-from helpers.storage import upload_to_drive
+from helpers.storage import upload_to_drive, download_from_drive
 from helpers.validation import validate_newsletter_date
-from sqlalchemy import and_
+from helpers.agent_bridge import notify_agent
+from sqlalchemy import and_, select
 
 from llm.providers import choose_llm_and_summarize
 
@@ -215,6 +216,24 @@ async def upload_summary(
         summary["drive_web_view_link"] = web_view_link
         summary["status"] = status
         summary["target_sunday"] = target_sunday.isoformat()
+
+        # Notify local agent of the review request or validation failure
+        if is_valid:
+            notify_agent("review_request", {
+                "newsletter_id": newsletter_id,
+                "title": summary["title"],
+                "summary": summary["summary"],
+                "target_sunday": target_sunday,
+                "status": status
+            })
+        else:
+            notify_agent("validation_alert", {
+                "newsletter_id": newsletter_id,
+                "filename": standard_filename,
+                "target_sunday": target_sunday,
+                "status": status,
+                "error_message": error_msg
+            })
     except Exception as e:
         logger.error(f"LLM error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
@@ -289,3 +308,124 @@ async def get_newsletters() -> JSONResponse:
     except Exception as e:
         logger.error(f"Error fetching newsletters: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching newsletters: {e}")
+
+
+@app.get("/newsletters/{newsletter_id}/approve", response_class=HTMLResponse)
+async def approve_newsletter_summary(newsletter_id: int):
+    """
+    Approve a newsletter and schedule it for delivery.
+    """
+    logger.info(f"Approving newsletter {newsletter_id}")
+    try:
+        # Update status to 'scheduled' and ensure schedule_date is set (defaults to Sunday 8:00 AM)
+        query = newsletters.update().where(newsletters.c.id == newsletter_id).values(
+            status="scheduled",
+            delivered=False
+        )
+        await database.execute(query)
+        
+        # Fetch details to display
+        fetch_query = select(newsletters.c.filename, newsletters.c.target_sunday).where(newsletters.c.id == newsletter_id)
+        row = await database.fetch_one(fetch_query)
+        
+        filename = row["filename"] if row else "Unknown File"
+        target_sunday = row["target_sunday"] if row else "Unknown Date"
+        
+        return HTMLResponse(content=f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Summary Approved</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f7; color: #1d1d1f; }}
+                .card {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px; }}
+                h1 {{ color: #0071e3; font-size: 24px; margin-bottom: 16px; }}
+                p {{ font-size: 16px; line-height: 1.5; color: #86868b; margin-bottom: 24px; }}
+                .btn {{ background-color: #0071e3; color: white; border: none; padding: 12px 24px; border-radius: 980px; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; display: inline-block; }}
+                .btn:hover {{ background-color: #0077ed; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>✓ Approved & Scheduled</h1>
+                <p>The newsletter <strong>{filename}</strong> has been approved.<br>It is scheduled for delivery on <strong>Sunday {target_sunday} at 8:00 AM</strong>.</p>
+                <a href="http://localhost:3000" class="btn">Go to Dashboard</a>
+            </div>
+        </body>
+        </html>
+        """)
+    except Exception as e:
+        logger.error(f"Error approving newsletter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/newsletters/{newsletter_id}/regenerate", response_class=HTMLResponse)
+async def regenerate_newsletter_summary(newsletter_id: int):
+    """
+    Regenerate a newsletter's AI summary from its stored file.
+    """
+    logger.info(f"Regenerating summary for newsletter {newsletter_id}")
+    try:
+        # 1. Fetch newsletter details
+        query = select(newsletters).where(newsletters.c.id == newsletter_id)
+        newsletter = await database.fetch_one(query)
+        if not newsletter:
+            raise HTTPException(status_code=404, detail="Newsletter not found")
+            
+        # 2. Download original file
+        file_id = newsletter["drive_file_id"]
+        filename = newsletter["filename"]
+        content = download_from_drive(file_id)
+        if not content:
+            raise HTTPException(status_code=500, detail="Failed to retrieve newsletter file from storage")
+            
+        # 3. Extract text
+        file_type = "pdf" if filename.lower().endswith(".pdf") else "docx"
+        text = extract_text_from_file(io.BytesIO(content), file_type=file_type)
+        
+        # 4. Summarize again
+        summary_data = choose_llm_and_summarize(text)
+        
+        # 5. Update summaries database
+        update_query = summaries.update().where(summaries.c.newsletter_id == newsletter_id).values(
+            title=summary_data["title"],
+            summary=summary_data["summary"]
+        )
+        await database.execute(update_query)
+        
+        # 6. Notify agent of the regenerated review request
+        notify_agent("review_request", {
+            "newsletter_id": newsletter_id,
+            "title": summary_data["title"],
+            "summary": summary_data["summary"],
+            "target_sunday": newsletter["target_sunday"],
+            "status": newsletter["status"]
+        })
+        
+        return HTMLResponse(content=f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Summary Regenerated</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f7; color: #1d1d1f; }}
+                .card {{ background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px; }}
+                h1 {{ color: #0071e3; font-size: 24px; margin-bottom: 16px; }}
+                p {{ font-size: 16px; line-height: 1.5; color: #86868b; margin-bottom: 24px; }}
+                .btn {{ background-color: #0071e3; color: white; border: none; padding: 12px 24px; border-radius: 980px; font-size: 14px; font-weight: 600; text-decoration: none; cursor: pointer; display: inline-block; }}
+                .btn:hover {{ background-color: #0077ed; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>🔄 Regenerated Successfully</h1>
+                <p>A new AI summary has been generated for <strong>{filename}</strong>.<br>The review notification has been sent to your WhatsApp/Signal channels.</p>
+                <a href="http://localhost:3000" class="btn">Go to Dashboard</a>
+            </div>
+        </body>
+        </html>
+        """)
+    except Exception as e:
+        logger.error(f"Error regenerating newsletter summary: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
