@@ -65,7 +65,8 @@ function HomeContent() {
   const fetchNewsletters = async () => {
     setFetchingNewsletters(true);
     try {
-      const response = await fetch('http://localhost:8000/newsletters');
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/newsletters`);
       if (response.ok) {
         const data = await response.json();
         setPublicNewsletters(data.newsletters);
@@ -99,7 +100,8 @@ function HomeContent() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:8000/upload-document', {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/upload-document`, {
         method: 'POST',
         body: formData,
         headers: {
@@ -137,7 +139,8 @@ function HomeContent() {
 
     setUpdating(true);
     try {
-      const response = await fetch(`http://localhost:8000/newsletters/${summary.newsletter_id}`, {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${backendUrl}/newsletters/${summary.newsletter_id}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
