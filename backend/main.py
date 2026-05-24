@@ -2,7 +2,7 @@ import logging
 import tempfile
 import os
 import io
-from typing import Dict
+from typing import Dict, Any, Optional
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -141,6 +141,17 @@ async def upload_summary(
             except Exception as thumb_err:
                 logger.error(f"Failed to generate thumbnail: {thumb_err}")
 
+        # Construct tags string
+        tags_list = []
+        if summary.get("liturgical_season"):
+            tags_list.append(summary["liturgical_season"].lower().replace(" ", "-"))
+        if summary.get("calendar_year"):
+            tags_list.append(str(summary["calendar_year"]))
+        if summary.get("liturgical_year"):
+            tags_list.append(summary["liturgical_year"])
+        
+        tags_str = ", ".join(tags_list) if tags_list else None
+
         # First, store newsletter information
         logger.debug("Storing newsletter information in database")
         newsletter_id = await database.execute(
@@ -150,6 +161,8 @@ async def upload_summary(
                 drive_web_view_link=web_view_link,
                 thumbnail_drive_id=thumbnail_drive_id,
                 uploader="api_user",
+                schedule_date=summary.get("schedule_date"),
+                tags=tags_str,
                 delivered=False
             )
         )
@@ -177,6 +190,7 @@ async def upload_summary(
         logger.info(f"Summary generated and stored successfully (Newsletter ID: {newsletter_id}, Summary ID: {summary_id})")
         
         # Add drive info to response
+        summary["newsletter_id"] = newsletter_id
         summary["thumbnail_drive_id"] = thumbnail_drive_id
         summary["drive_file_id"] = drive_file_id
         summary["drive_web_view_link"] = web_view_link
@@ -185,6 +199,33 @@ async def upload_summary(
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
     return JSONResponse(content={"summary": summary})
+
+
+@app.patch("/newsletters/{newsletter_id}")
+async def update_newsletter(
+    newsletter_id: int,
+    data: Dict[str, Any],
+    _: None = Depends(verify_api_key)
+) -> JSONResponse:
+    """
+    Updates the metadata of a newsletter (e.g., schedule_date, tags).
+    """
+    logger.info(f"Updating newsletter {newsletter_id} with data: {data}")
+    try:
+        # Filter allowed fields
+        allowed_fields = ["schedule_date", "tags", "delivered"]
+        update_data = {k: v for k, v in data.items() if k in allowed_fields}
+        
+        if not update_data:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        query = newsletters.update().where(newsletters.c.id == newsletter_id).values(**update_data)
+        await database.execute(query)
+        
+        return JSONResponse(content={"message": "Newsletter updated successfully"})
+    except Exception as e:
+        logger.error(f"Error updating newsletter: {e}")
+        raise HTTPException(status_code=500, detail=f"Error updating newsletter: {e}")
 
 
 @app.get("/newsletters")

@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def verify_api_key(request: Request):
     """
-    Verify that the request contains a valid API key in the Authorization header.
+    Verify that the request contains a valid API key in the Authorization or X-API-Key header.
     
     Args:
         request: The FastAPI request object
@@ -19,7 +19,16 @@ def verify_api_key(request: Request):
         HTTPException: If the API key is missing or invalid
     """
     auth_header = request.headers.get("Authorization")
-    if not auth_header or auth_header != f"Bearer {settings.api_key}":
+    x_api_key = request.headers.get("X-API-Key")
+    
+    verified = False
+    
+    if auth_header and auth_header == f"Bearer {settings.api_key}":
+        verified = True
+    elif x_api_key and x_api_key == settings.api_key:
+        verified = True
+        
+    if not verified:
         logger.warning("Unauthorized API request attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
