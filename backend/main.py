@@ -352,6 +352,9 @@ async def approve_newsletter_summary(newsletter_id: int):
         filename = row["filename"] if row else "Unknown File"
         target_sunday = row["target_sunday"] if row else "Unknown Date"
         
+        # Determine redirect URL from settings (CORS origins)
+        redirect_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
+        
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -370,7 +373,7 @@ async def approve_newsletter_summary(newsletter_id: int):
             <div class="card">
                 <h1>✓ Approved & Scheduled</h1>
                 <p>The newsletter <strong>{filename}</strong> has been approved.<br>It is scheduled for delivery on <strong>Sunday {target_sunday} at 8:00 AM</strong>.</p>
-                <a href="http://localhost:3000" class="btn">Go to Dashboard</a>
+                <a href="{redirect_url}" class="btn">Go to Dashboard</a>
             </div>
         </body>
         </html>
@@ -423,6 +426,9 @@ async def regenerate_newsletter_summary(newsletter_id: int):
             "status": newsletter["status"]
         })
         
+        # Determine redirect URL from settings (CORS origins)
+        redirect_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
+        
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -441,7 +447,7 @@ async def regenerate_newsletter_summary(newsletter_id: int):
             <div class="card">
                 <h1>🔄 Regenerated Successfully</h1>
                 <p>A new AI summary has been generated for <strong>{filename}</strong>.<br>The review notification has been sent to your WhatsApp/Signal channels.</p>
-                <a href="http://localhost:3000" class="btn">Go to Dashboard</a>
+                <a href="{redirect_url}" class="btn">Go to Dashboard</a>
             </div>
         </body>
         </html>
