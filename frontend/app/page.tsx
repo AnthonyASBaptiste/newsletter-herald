@@ -321,7 +321,7 @@ function HomeContent() {
             ) : publicNewsletters.length > 0 ? (
               <Grid container spacing={3}>
                 {publicNewsletters.map((item) => (
-                  <Grid item xs={12} sm={6} md={4} key={item.id}>
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>
                     <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 2 }}>
                       <Typography variant="overline" color="primary" sx={{ fontWeight: 700 }}>
                         {item.uploaded_at ? new Date(item.uploaded_at).toLocaleDateString(undefined, { 
@@ -388,7 +388,7 @@ function HomeContent() {
                 Latest Summary
               </Typography>
               <Grid container spacing={4}>
-                <Grid item xs={12} md={8}>
+                <Grid size={{ xs: 12, md: 8 }}>
                   <Paper sx={{ p: { xs: 3, md: 5 }, bgcolor: 'white' }}>
                     <Stack direction="row" spacing={1} sx={{ mb: 3 }}>
                       <Chip 
@@ -464,7 +464,7 @@ function HomeContent() {
                     </Box>
                   </Paper>
                 </Grid>
-                <Grid item xs={12} md={4}>
+                <Grid size={{ xs: 12, md: 4 }}>
                   {editMode ? (
                     <Paper sx={{ p: 3, bgcolor: 'white', mb: 3, border: '2px solid', borderColor: 'primary.light' }}>
                       <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
