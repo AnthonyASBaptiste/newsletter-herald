@@ -16,7 +16,10 @@ newsletters = Table(
     Column("uploader", String),
     Column("uploaded_at", DateTime(timezone=True), server_default=func.now()),
     Column("schedule_date", Date, nullable=True),
+    Column("tags", Text, nullable=True),
     Column("delivered", Boolean, default=False),
+    Column("status", String, default="draft"),
+    Column("target_sunday", Date, nullable=True),
 )
 
 summaries = Table(
@@ -38,4 +41,24 @@ model_usage = Table(
     Column("tokens", Integer),
     Column("cost_usd_estimate", Float),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+
+subscribers = Table(
+    "subscribers",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("email", String, unique=True, index=True, nullable=False),
+    Column("is_active", Boolean, default=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+
+delivery_logs = Table(
+    "delivery_logs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("newsletter_id", Integer, ForeignKey("newsletters.id")),
+    Column("recipient", String, nullable=False),
+    Column("status", String, nullable=False),
+    Column("error_message", Text, nullable=True),
+    Column("timestamp", DateTime(timezone=True), server_default=func.now()),
 )
