@@ -59,7 +59,7 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # CORS Configuration
-    cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins: list[str] = ["https://newsletter-herald.vercel.app", "http://localhost:3000", "http://127.0.0.1:3000"]
 
     class Config:
         env_file = ".env"
