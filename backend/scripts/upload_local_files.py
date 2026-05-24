@@ -97,6 +97,17 @@ async def process_local_files():
                 try:
                     logger.info(f"Saving {new_filename} to DB...")
                     async with database.transaction():
+                        # Construct tags string
+                        tags_list = []
+                        if summary_data.get("liturgical_season"):
+                            tags_list.append(summary_data["liturgical_season"].lower().replace(" ", "-"))
+                        if summary_data.get("calendar_year"):
+                            tags_list.append(str(summary_data["calendar_year"]))
+                        if summary_data.get("liturgical_year"):
+                            tags_list.append(summary_data["liturgical_year"])
+                        
+                        tags_str = ", ".join(tags_list) if tags_list else None
+
                         newsletter_id = await database.execute(
                             newsletters.insert().values(
                                 filename=new_filename,
@@ -104,6 +115,8 @@ async def process_local_files():
                                 drive_web_view_link=web_view_link,
                                 thumbnail_drive_id=thumbnail_drive_id,
                                 uploader="local_batch_upload",
+                                schedule_date=summary_data.get("schedule_date"),
+                                tags=tags_str,
                                 delivered=False
                             )
                         )

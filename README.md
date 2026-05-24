@@ -31,25 +31,30 @@ Newsletter Herald is a full-stack application that automates the extraction, sum
 
 ### Quick Start
 
-1. **Backend Setup**:
+Run both services with a single command from the root:
+```bash
+npm start
+```
+*Note: This uses `concurrently` to run the FastAPI backend and Next.js frontend simultaneously.*
+
+### Manual Setup
+
+1. **Backend**:
    ```bash
    cd backend
-   # Install dependencies
    pip install -r requirements.txt
-   # Configure environment
    cp .env.example .env  # Fill in your API keys
-   # Run the server
    uvicorn main:app --reload
    ```
 
-2. **Frontend Setup**:
+2. **Frontend**:
    ```bash
    cd frontend
    npm install
    npm run dev
    ```
 
-3. **Local Processing**:
+3. **Batch Processing**:
    Place newsletters in `newsletters_to_upload/` and run:
    ```bash
    python backend/scripts/upload_local_files.py

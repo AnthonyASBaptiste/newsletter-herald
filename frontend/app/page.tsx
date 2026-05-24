@@ -14,13 +14,20 @@ import {
   Alert,
   Divider,
   Stack,
-  Chip
+  Chip,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton
 } from '@mui/material';
 import ArticleIcon from '@mui/icons-material/Article';
 import SearchIcon from '@mui/icons-material/Search';
 import FilePresentIcon from '@mui/icons-material/FilePresent';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CloseIcon from '@mui/icons-material/Close';
 import { useUser } from "@stackframe/stack";
 import Link from "next/link";
 
@@ -38,6 +45,37 @@ function HomeContent() {
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publicNewsletters, setPublicNewsletters] = useState<any[]>([]);
+  const [fetchingNewsletters, setFetchingNewsletters] = useState(false);
+  
+  // New state for confirmation and editing
+  const [editMode, setEditMode] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [tags, setTags] = useState("");
+  const [updating, setUpdating] = useState(false);
+  
+  // Modal state for viewing summaries
+  const [selectedNewsletter, setSelectedNewsletter] = useState<any>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    fetchNewsletters();
+  }, []);
+
+  const fetchNewsletters = async () => {
+    setFetchingNewsletters(true);
+    try {
+      const response = await fetch('http://localhost:8000/newsletters');
+      if (response.ok) {
+        const data = await response.json();
+        setPublicNewsletters(data.newsletters);
+      }
+    } catch (err) {
+      console.error("Failed to fetch newsletters:", err);
+    } finally {
+      setFetchingNewsletters(false);
+    }
+  };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -55,6 +93,7 @@ function HomeContent() {
     setLoading(true);
     setError(null);
     setSummary(null);
+    setEditMode(false);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -75,10 +114,53 @@ function HomeContent() {
 
       const data = await response.json();
       setSummary(data.summary);
+      
+      // Initialize edit fields from AI response
+      setScheduleDate(data.summary.schedule_date || '');
+      
+      // Construct initial tags from liturgical info
+      const tagsList = [];
+      if (data.summary.liturgical_season) tagsList.push(data.summary.liturgical_season.toLowerCase().replace(" ", "-"));
+      if (data.summary.calendar_year) tagsList.push(String(data.summary.calendar_year));
+      
+      setTags(tagsList.join(', '));
+      setEditMode(true);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (!summary || !summary.newsletter_id) return;
+
+    setUpdating(true);
+    try {
+      const response = await fetch(`http://localhost:8000/newsletters/${summary.newsletter_id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
+        },
+        body: JSON.stringify({
+          schedule_date: scheduleDate || null,
+          tags: tags || null,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update newsletter schedule');
+      }
+
+      // Refresh public feed and exit edit mode
+      fetchNewsletters();
+      setEditMode(false);
+      alert("Newsletter scheduled successfully!");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -229,27 +311,49 @@ function HomeContent() {
             <Typography variant="h4" sx={{ mb: 4, letterSpacing: '-0.02em', fontWeight: 700 }}>
               Latest Newsletters
             </Typography>
-            <Grid container spacing={3}>
-              {[1, 2, 3].map((item) => (
-                <Grid item xs={12} sm={6} md={4} key={item}>
-                  <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                    <Typography variant="overline" color="primary" sx={{ fontWeight: 700 }}>
-                      March {item + 1}, 2026
-                    </Typography>
-                    <Typography variant="h6" sx={{ mb: 2, fontWeight: 700 }}>
-                      Weekly Bulletin - Parish of St. Jude
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3, flexGrow: 1 }}>
-                      This week's newsletter includes updates on the upcoming community fair, 
-                      the Lenten mission schedule, and special intentions for our parishioners.
-                    </Typography>
-                    <Button variant="text" color="primary" sx={{ alignSelf: 'flex-start', p: 0 }}>
-                      Read Summary →
-                    </Button>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
+            {fetchingNewsletters ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}>
+                <CircularProgress />
+              </Box>
+            ) : publicNewsletters.length > 0 ? (
+              <Grid container spacing={3}>
+                {publicNewsletters.map((item) => (
+                  <Grid item xs={12} sm={6} md={4} key={item.id}>
+                    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 2 }}>
+                      <Typography variant="overline" color="primary" sx={{ fontWeight: 700 }}>
+                        {item.uploaded_at ? new Date(item.uploaded_at).toLocaleDateString(undefined, { 
+                          year: 'numeric', 
+                          month: 'long', 
+                          day: 'numeric' 
+                        }) : 'Recent'}
+                      </Typography>
+                      <Typography variant="h6" sx={{ mb: 1, fontWeight: 700 }}>
+                        {item.title || "Weekly Bulletin"}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 3, flexGrow: 1, whiteSpace: 'pre-line' }}>
+                        {item.summary ? item.summary.substring(0, 200) + "..." : "Read the latest news from our parish community."}
+                      </Typography>
+                      <Button 
+                        variant="text" 
+                        color="primary" 
+                        sx={{ alignSelf: 'flex-start', p: 0, fontWeight: 600 }}
+                        onClick={() => {
+                          setSelectedNewsletter(item);
+                          setModalOpen(true);
+                        }}
+                      >
+                        Read Summary →
+                      </Button>
+                    </Paper>
+                  </Grid>
+                ))}
+              </Grid>
+            ) : (
+              <Box sx={{ textAlign: 'center', py: 5, opacity: 0.6 }}>
+                <ArticleIcon sx={{ fontSize: 48, mb: 1 }} color="disabled" />
+                <Typography variant="body1">No newsletters have been published yet.</Typography>
+              </Box>
+            )}
           </Box>
         )}
 
@@ -358,6 +462,77 @@ function HomeContent() {
                   </Paper>
                 </Grid>
                 <Grid item xs={12} md={4}>
+                  {editMode ? (
+                    <Paper sx={{ p: 3, bgcolor: 'white', mb: 3, border: '2px solid', borderColor: 'primary.light' }}>
+                      <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+                        <AutoAwesomeIcon color="primary" sx={{ mr: 1, fontSize: 20 }} />
+                        Confirm Schedule
+                      </Typography>
+                      
+                      <Typography variant="body2" sx={{ mb: 2, color: 'text.secondary' }}>
+                        The AI extracted these details. Please verify before scheduling delivery.
+                      </Typography>
+
+                      <Stack spacing={2.5}>
+                        <TextField
+                          label="Schedule Delivery For"
+                          type="date"
+                          value={scheduleDate}
+                          onChange={(e) => setScheduleDate(e.target.value)}
+                          InputLabelProps={{ shrink: true }}
+                          fullWidth
+                          size="small"
+                        />
+                        
+                        <TextField
+                          label="Categorization Tags"
+                          placeholder="e.g. lent, year-c"
+                          value={tags}
+                          onChange={(e) => setTags(e.target.value)}
+                          fullWidth
+                          size="small"
+                          helperText="Comma separated"
+                        />
+
+                        <Button 
+                          variant="contained" 
+                          fullWidth 
+                          size="large"
+                          onClick={handleConfirm}
+                          disabled={updating}
+                          sx={{ borderRadius: '8px', py: 1.5 }}
+                        >
+                          {updating ? <CircularProgress size={24} /> : "Schedule Delivery"}
+                        </Button>
+                        
+                        <Button 
+                          variant="text" 
+                          fullWidth 
+                          onClick={() => setEditMode(false)}
+                          disabled={updating}
+                        >
+                          Keep as Draft
+                        </Button>
+                      </Stack>
+                    </Paper>
+                  ) : (
+                    <Paper sx={{ p: 3, bgcolor: 'white', mb: 3 }}>
+                      <Typography variant="h6" sx={{ mb: 2 }}>Status</Typography>
+                      <Alert severity="success" icon={<AutoAwesomeIcon />} sx={{ mb: 2 }}>
+                        Summarized & Scheduled
+                      </Alert>
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        <strong>Date:</strong> {scheduleDate || 'Not set'}
+                      </Typography>
+                      <Typography variant="body2" sx={{ mb: 2 }}>
+                        <strong>Tags:</strong> {tags || 'None'}
+                      </Typography>
+                      <Button variant="outlined" fullWidth onClick={() => setEditMode(true)}>
+                        Edit Schedule
+                      </Button>
+                    </Paper>
+                  )}
+
                   <Paper sx={{ p: 3, bgcolor: 'white' }}>
                     <Typography variant="h6" sx={{ mb: 2 }}>File Details</Typography>
                     <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
@@ -382,6 +557,47 @@ function HomeContent() {
           </Grow>
         )}
       </Container>
+
+      {/* Public Summary Modal */}
+      <Dialog 
+        open={modalOpen} 
+        onClose={() => setModalOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle sx={{ pr: 6 }}>
+          {selectedNewsletter?.title || "Newsletter Summary"}
+          <IconButton
+            onClick={() => setModalOpen(false)}
+            sx={{ position: 'absolute', right: 16, top: 16 }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="overline" color="primary" sx={{ fontWeight: 700, mb: 2, display: 'block' }}>
+            {selectedNewsletter?.uploaded_at ? new Date(selectedNewsletter.uploaded_at).toLocaleDateString(undefined, { 
+              year: 'numeric', month: 'long', day: 'numeric' 
+            }) : ''}
+          </Typography>
+          <Typography variant="body1" sx={{ fontSize: '1.1rem', lineHeight: 1.8, whiteSpace: 'pre-line' }}>
+            {selectedNewsletter?.summary}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setModalOpen(false)} variant="outlined" sx={{ borderRadius: '100px', px: 4 }}>
+            Close
+          </Button>
+          {!user && (
+            <Link href="/handler/sign-up" style={{ textDecoration: 'none' }}>
+              <Button variant="contained" sx={{ borderRadius: '100px', px: 4 }}>
+                Join Mailing List
+              </Button>
+            </Link>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

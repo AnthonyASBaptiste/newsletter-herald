@@ -1,2 +1,8 @@
 GEMINI.md
 newsletters_to_upload/* 
+
+# Python cache / bytecode
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd

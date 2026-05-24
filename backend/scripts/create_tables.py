@@ -22,6 +22,10 @@ settings = get_settings()
 # Create database engine
 engine = create_engine(settings.database_url)
 
+# Drop all tables
+logger.info("Dropping all tables...")
+metadata.drop_all(engine)
+
 # Create tables
 logger.info("Creating database tables...")
 metadata.create_all(engine)

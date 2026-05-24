@@ -12,6 +12,16 @@ settings = get_settings()
 # Create a logger for this module
 logger = logging.getLogger(__name__)
 
+# Core Prompt Instruction for Sanitization
+# This is shared across all providers to ensure consistent PII/PHI filtering.
+SANITIZATION_INSTRUCTION = (
+    "CRITICAL: YOUR SUMMARY MUST NOT INCLUDE ANY PERSONALLY IDENTIFIABLE INFORMATION (PII) OR PROTECTED HEALTH INFORMATION (PHI). "
+    "Do NOT include names of parishioners, specific home addresses, personal phone numbers, or personal email addresses. "
+    "Do NOT include details about medical conditions, hospitalizations, or specific health requests for individuals. "
+    "If you mention upcoming events, refer to them by the event name or group, not by the names of the individuals hosting them (unless they are official church staff like the Priest). "
+    "The goal is a public-facing summary that protects the privacy of all individuals mentioned in the original newsletter."
+)
+
 
 def summarize_with_model(prompt: str, timeout: int = 300) -> Dict[str, str]:
     """
@@ -22,7 +32,14 @@ def summarize_with_model(prompt: str, timeout: int = 300) -> Dict[str, str]:
 
     system_instruction = (
         "You are a helpful assistant that summarizes Roman Catholic church newsletters into warm, concise 2-paragraph email messages for parishioners. "
-        "Return your response in JSON format with two keys: 'title' (a concise subject line like '4th Sunday of Lent – Living as Children of the Light') and 'summary' (the 2-paragraph email body)."
+        "Return your response in JSON format with the following keys:\n"
+        "1. 'title': A concise subject line (e.g., '4th Sunday of Lent – Living as Children of the Light')\n"
+        "2. 'summary': The 2-paragraph email body.\n"
+        "3. 'schedule_date': The date the newsletter is for, in YYYY-MM-DD format.\n"
+        "4. 'liturgical_season': The liturgical season (e.g., 'Ordinary Time', 'Lent', 'Advent', 'Christmas', 'Easter').\n"
+        "5. 'calendar_year': The calendar year (e.g., '2025').\n"
+        "6. 'liturgical_year': The liturgical year (e.g., 'Year A', 'Year B', 'Year C').\n"
+        f"\n{SANITIZATION_INSTRUCTION}"
     )
     full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
 
@@ -48,7 +65,11 @@ def summarize_with_model(prompt: str, timeout: int = 300) -> Dict[str, str]:
         resp_data = json.loads(data["response"])
         return {
             "title": resp_data.get("title", "Church Newsletter"),
-            "summary": resp_data.get("summary", "")
+            "summary": resp_data.get("summary", ""),
+            "schedule_date": resp_data.get("schedule_date"),
+            "liturgical_season": resp_data.get("liturgical_season"),
+            "calendar_year": resp_data.get("calendar_year"),
+            "liturgical_year": resp_data.get("liturgical_year")
         }
 
     except Exception as e:
@@ -76,7 +97,16 @@ def summarize_with_claude(prompt: str, timeout: int = 300) -> Dict[str, str]:
         "model": "claude-opus-4-20250514",
         "max_tokens": settings.max_allowed_tokens,
         "temperature": 0.7,
-        "system": "Summarize the newsletter. Return ONLY a JSON object with 'title' (a warm subject line) and 'summary' (2-paragraph email body).",
+        "system": (
+            "Summarize the newsletter. Return ONLY a JSON object with the following keys:\n"
+            "1. 'title': A warm subject line.\n"
+            "2. 'summary': 2-paragraph email body.\n"
+            "3. 'schedule_date': Newsletter date in YYYY-MM-DD format.\n"
+            "4. 'liturgical_season': Liturgical season (e.g., 'Ordinary Time', 'Lent', 'Advent', 'Christmas', 'Easter').\n"
+            "5. 'calendar_year': Calendar year (e.g., '2025').\n"
+            "6. 'liturgical_year': Liturgical year (e.g., 'Year A', 'Year B', 'Year C')."
+            f"\n\n{SANITIZATION_INSTRUCTION}"
+        ),
         "messages": [
             {"role": "user", "content": prompt}
         ]
@@ -96,7 +126,11 @@ def summarize_with_claude(prompt: str, timeout: int = 300) -> Dict[str, str]:
         resp_data = json.loads(data["content"][0]["text"])
         return {
             "title": resp_data.get("title", "Church Newsletter"),
-            "summary": resp_data.get("summary", "")
+            "summary": resp_data.get("summary", ""),
+            "schedule_date": resp_data.get("schedule_date"),
+            "liturgical_season": resp_data.get("liturgical_season"),
+            "calendar_year": resp_data.get("calendar_year"),
+            "liturgical_year": resp_data.get("liturgical_year")
         }
 
     except Exception as e:
@@ -122,7 +156,19 @@ def summarize_with_groq(prompt: str, timeout: int = 60) -> Dict[str, str]:
     payload = {
         "model": settings.groq_model,
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant that summarizes Roman Catholic church newsletters. Return your response as a JSON object with two keys: 'title' (a warm, descriptive subject line) and 'summary' (a warm, 2-paragraph email message)."},
+            {
+                "role": "system", 
+                "content": (
+                    "You are a helpful assistant that summarizes Roman Catholic church newsletters. Return your response as a JSON object with the following keys:\n"
+                    "1. 'title': A warm, descriptive subject line.\n"
+                    "2. 'summary': A warm, 2-paragraph email message.\n"
+                    "3. 'schedule_date': Newsletter date in YYYY-MM-DD format.\n"
+                    "4. 'liturgical_season': Liturgical season (e.g., 'Ordinary Time', 'Lent', 'Advent', 'Christmas', 'Easter').\n"
+                    "5. 'calendar_year': Calendar year (e.g., '2025').\n"
+                    "6. 'liturgical_year': Liturgical year (e.g., 'Year A', 'Year B', 'Year C')."
+                    f"\n\n{SANITIZATION_INSTRUCTION}"
+                )
+            },
             {"role": "user", "content": prompt}
         ],
         "response_format": {"type": "json_object"},
@@ -144,7 +190,11 @@ def summarize_with_groq(prompt: str, timeout: int = 60) -> Dict[str, str]:
         resp_data = json.loads(data["choices"][0]["message"]["content"])
         return {
             "title": resp_data.get("title", "Church Newsletter"),
-            "summary": resp_data.get("summary", "")
+            "summary": resp_data.get("summary", ""),
+            "schedule_date": resp_data.get("schedule_date"),
+            "liturgical_season": resp_data.get("liturgical_season"),
+            "calendar_year": resp_data.get("calendar_year"),
+            "liturgical_year": resp_data.get("liturgical_year")
         }
 
     except Exception as e:
@@ -207,6 +257,10 @@ def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
     return {
         "title": res["title"],
         "summary": res["summary"],
+        "schedule_date": res.get("schedule_date"),
+        "liturgical_season": res.get("liturgical_season"),
+        "calendar_year": res.get("calendar_year"),
+        "liturgical_year": res.get("liturgical_year"),
         "model": model,
         "tokens": token_estimate,
         "cost_usd_estimate": round(cost_estimate, 4)

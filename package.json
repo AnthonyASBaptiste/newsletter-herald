@@ -1,0 +1,13 @@
+{
+  "name": "newsletter-herald",
+  "version": "0.1.0",
+  "description": "Roman Catholic church newsletter summarization and delivery system",
+  "scripts": {
+    "dev:backend": "cd backend && .\\venv\\Scripts\\python -m uvicorn main:app --reload",
+    "dev:frontend": "cd frontend && npm run dev",
+    "start": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
