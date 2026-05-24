@@ -3,6 +3,7 @@ import tempfile
 import os
 import io
 from typing import Dict, Any, Optional
+from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends
 from fastapi.responses import JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +19,7 @@ from sqlalchemy import and_, select
 from llm.providers import choose_llm_and_summarize
 
 from db.setup import database
-from db.models import summaries, model_usage, newsletters
+from db.models import summaries, model_usage, newsletters, subscribers
 
 from config import get_settings
 
@@ -428,4 +429,61 @@ async def regenerate_newsletter_summary(newsletter_id: int):
     except Exception as e:
         logger.error(f"Error regenerating newsletter summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SubscriberRequest(BaseModel):
+    email: str
+
+
+@app.post("/subscribers")
+async def subscribe_user(data: SubscriberRequest):
+    """
+    Subscribes a parishioner to the mailing list.
+    """
+    email = data.email.strip().lower()
+    if not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+        
+    try:
+        # Check if already exists
+        query = select(subscribers).where(subscribers.c.email == email)
+        existing = await database.fetch_one(query)
+        
+        if existing:
+            if existing["is_active"]:
+                return JSONResponse(content={"message": "You are already subscribed!"}, status_code=200)
+            else:
+                # Reactivate subscription
+                update_query = subscribers.update().where(subscribers.c.email == email).values(is_active=True)
+                await database.execute(update_query)
+                return JSONResponse(content={"message": "Subscription reactivated successfully!"}, status_code=200)
+        
+        # Create new subscriber
+        insert_query = subscribers.insert().values(email=email, is_active=True)
+        await database.execute(insert_query)
+        return JSONResponse(content={"message": "Successfully subscribed to the parish newsletter!"}, status_code=201)
+    except Exception as e:
+        logger.error(f"Error subscribing email: {e}")
+        raise HTTPException(status_code=500, detail="Error subscribing email")
+
+
+@app.post("/subscribers/unsubscribe")
+async def unsubscribe_user(data: SubscriberRequest):
+    """
+    Unsubscribes a user from the mailing list.
+    """
+    email = data.email.strip().lower()
+    try:
+        query = select(subscribers).where(subscribers.c.email == email)
+        existing = await database.fetch_one(query)
+        
+        if not existing or not existing["is_active"]:
+            return JSONResponse(content={"message": "Email is not subscribed."}, status_code=200)
+            
+        update_query = subscribers.update().where(subscribers.c.email == email).values(is_active=False)
+        await database.execute(update_query)
+        return JSONResponse(content={"message": "You have been successfully unsubscribed."})
+    except Exception as e:
+        logger.error(f"Error unsubscribing email: {e}")
+        raise HTTPException(status_code=500, detail="Error unsubscribing email")
 
