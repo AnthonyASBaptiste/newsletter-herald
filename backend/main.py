@@ -74,6 +74,24 @@ async def root() -> Dict[str, str]:
     return {"message": f"Welcome to your {settings.app_name}"}
 
 
+@app.get("/health")
+async def health_check() -> Dict[str, Any]:
+    """
+    Health check endpoint that verifies database connectivity.
+    """
+    try:
+        # Run a simple query to verify database is connected
+        await database.execute("SELECT 1")
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "app_name": settings.app_name
+        }
+    except Exception as e:
+        logger.error(f"Health check failed - Database unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Database connection failed")
+
+
 @app.post("/upload-document")
 async def upload_summary(
     file: UploadFile = File(...),
