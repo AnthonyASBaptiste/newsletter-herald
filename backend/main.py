@@ -11,6 +11,8 @@ from contextlib import asynccontextmanager
 from helpers.key_utils import verify_api_key
 from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
 from helpers.storage import upload_to_drive
+from helpers.validation import validate_newsletter_date
+from sqlalchemy import and_
 
 from llm.providers import choose_llm_and_summarize
 
@@ -152,6 +154,21 @@ async def upload_summary(
         
         tags_str = ", ".join(tags_list) if tags_list else None
 
+        # Validate newsletter date
+        is_valid, target_sunday, error_msg = validate_newsletter_date(summary.get("schedule_date"))
+        status = "draft" if is_valid else "failed_validation"
+        logger.info(f"Date validation: is_valid={is_valid}, target_sunday={target_sunday}, status={status}")
+
+        # Supersede older files for the same Sunday issue
+        logger.info(f"Marking existing drafts/scheduled newsletters for Sunday {target_sunday} as superseded")
+        update_query = newsletters.update().where(
+            and_(
+                newsletters.c.target_sunday == target_sunday,
+                newsletters.c.status.in_(["draft", "scheduled", "failed_validation"])
+            )
+        ).values(status="superseded")
+        await database.execute(update_query)
+
         # First, store newsletter information
         logger.debug("Storing newsletter information in database")
         newsletter_id = await database.execute(
@@ -163,7 +180,9 @@ async def upload_summary(
                 uploader="api_user",
                 schedule_date=summary.get("schedule_date"),
                 tags=tags_str,
-                delivered=False
+                delivered=False,
+                status=status,
+                target_sunday=target_sunday
             )
         )
 
@@ -194,11 +213,20 @@ async def upload_summary(
         summary["thumbnail_drive_id"] = thumbnail_drive_id
         summary["drive_file_id"] = drive_file_id
         summary["drive_web_view_link"] = web_view_link
+        summary["status"] = status
+        summary["target_sunday"] = target_sunday.isoformat()
     except Exception as e:
         logger.error(f"LLM error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
-    return JSONResponse(content={"summary": summary})
+    return JSONResponse(content={
+        "summary": summary,
+        "validation": {
+            "is_valid": is_valid,
+            "target_sunday": target_sunday.isoformat(),
+            "error_message": error_msg
+        }
+    })
 
 
 @app.patch("/newsletters/{newsletter_id}")
