@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -31,7 +31,6 @@ import {
   Breadcrumbs
 } from '@mui/material';
 import PeopleIcon from '@mui/icons-material/People';
-import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import SearchIcon from '@mui/icons-material/Search';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -67,7 +66,7 @@ export default function SubscribersPage() {
 }
 
 function SubscribersPageContent() {
-  const user = useUser({ or: 'redirect' });
+  useUser({ or: 'redirect' });
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
 
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, inactive: 0 });
@@ -91,11 +90,7 @@ function SubscribersPageContent() {
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
 
-  useEffect(() => {
-    fetchSubscribers();
-  }, []);
-
-  const fetchSubscribers = async () => {
+  const fetchSubscribers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -104,12 +99,17 @@ function SubscribersPageContent() {
       const data = await res.json();
       setSubscribers(data.subscribers || []);
       setStats(data.stats || { total: 0, active: 0, inactive: 0 });
-    } catch (err: any) {
-      setError(err.message || 'Failed to load subscribers');
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Failed to load subscribers');
     } finally {
       setLoading(false);
     }
-  };
+  }, [backendUrl]);
+
+  useEffect(() => {
+    fetchSubscribers();
+  }, [fetchSubscribers]);
 
   const handleSingleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,8 +140,9 @@ function SubscribersPageContent() {
       setNewLastName('');
       setNewPhone('');
       fetchSubscribers();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setAddLoading(false);
     }
@@ -171,8 +172,9 @@ function SubscribersPageContent() {
 
       setBatchResult(data);
       fetchSubscribers();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setBatchLoading(false);
     }
@@ -197,8 +199,9 @@ function SubscribersPageContent() {
         active: currentStatus ? prev.active - 1 : prev.active + 1,
         inactive: currentStatus ? prev.inactive + 1 : prev.inactive - 1,
       }));
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message);
     }
   };
 
@@ -213,8 +216,9 @@ function SubscribersPageContent() {
       if (!res.ok) throw new Error('Failed to delete subscriber');
 
       fetchSubscribers();
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message);
     }
   };
 
@@ -290,7 +294,7 @@ function SubscribersPageContent() {
 
         {/* Stat Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} sm={4}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#e8f2ff', color: '#0071e3' }}>
@@ -303,7 +307,7 @@ function SubscribersPageContent() {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} sm={4}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#e6f4ea', color: '#137333' }}>
@@ -316,7 +320,7 @@ function SubscribersPageContent() {
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} sm={4}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
               <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: '#fce8e6', color: '#c5221f' }}>
@@ -338,7 +342,7 @@ function SubscribersPageContent() {
           </Typography>
           <Box component="form" onSubmit={handleSingleAdd}>
             <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} sm={3}>
+              <Grid size={{ xs: 12, sm: 3 }}>
                 <TextField
                   placeholder="First Name"
                   fullWidth
@@ -348,7 +352,7 @@ function SubscribersPageContent() {
                   size="small"
                 />
               </Grid>
-              <Grid item xs={12} sm={3}>
+              <Grid size={{ xs: 12, sm: 3 }}>
                 <TextField
                   placeholder="Last Name"
                   fullWidth
@@ -358,7 +362,7 @@ function SubscribersPageContent() {
                   size="small"
                 />
               </Grid>
-              <Grid item xs={12} sm={3}>
+              <Grid size={{ xs: 12, sm: 3 }}>
                 <TextField
                   placeholder="Email (required)"
                   type="email"
@@ -370,7 +374,7 @@ function SubscribersPageContent() {
                   size="small"
                 />
               </Grid>
-              <Grid item xs={12} sm={3} sx={{ display: 'flex', gap: 1.5 }}>
+              <Grid size={{ xs: 12, sm: 3 }} sx={{ display: 'flex', gap: 1.5 }}>
                 <TextField
                   placeholder="Phone"
                   fullWidth
