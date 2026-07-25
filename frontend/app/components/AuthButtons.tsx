@@ -14,7 +14,14 @@ export default function AuthButtons() {
   return (
     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
       {isSignedIn ? (
-        <UserButton />
+        <>
+          <Link href="/docs" style={{ textDecoration: 'none' }}>
+            <Button sx={{ textTransform: 'none', fontWeight: 600, color: '#1d1d1f', fontSize: '0.95rem' }}>
+              Docs
+            </Button>
+          </Link>
+          <UserButton />
+        </>
       ) : (
         <>
           <SignInButton mode="modal" fallbackRedirectUrl="/">

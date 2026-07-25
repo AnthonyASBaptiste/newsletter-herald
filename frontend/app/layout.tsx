@@ -68,11 +68,6 @@ export default function RootLayout({
                         </Box>
                       </Link>
                       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                        <Link href="/docs" style={{ textDecoration: 'none' }}>
-                          <Button sx={{ textTransform: 'none', fontWeight: 600, color: '#1d1d1f', fontSize: '0.95rem' }}>
-                            Docs
-                          </Button>
-                        </Link>
                         <React.Suspense fallback={<Box sx={{ width: 100 }} />}>
                           <AuthButtons />
                         </React.Suspense>
