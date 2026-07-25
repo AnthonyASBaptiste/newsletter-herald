@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   Box, 
   Container, 
@@ -10,12 +10,9 @@ import {
   Grid, 
   CircularProgress,
   Fade,
-  Grow,
   Alert,
-  Divider,
   Stack,
   Chip,
-  TextField,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -31,10 +28,6 @@ import {
   CardContent
 } from '@mui/material';
 import ArticleIcon from '@mui/icons-material/Article';
-import SearchIcon from '@mui/icons-material/Search';
-import FilePresentIcon from '@mui/icons-material/FilePresent';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CloseIcon from '@mui/icons-material/Close';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -45,9 +38,30 @@ import DownloadIcon from '@mui/icons-material/Download';
 import PeopleIcon from '@mui/icons-material/People';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import { useUser } from "@stackframe/stack";
 import Link from "next/link";
+
+interface Newsletter {
+  id: number;
+  filename?: string;
+  drive_link?: string;
+  target_sunday?: string;
+  uploaded_at?: string;
+  title?: string;
+  summary?: string;
+  status: string;
+  tags?: string;
+  thumbnail_id?: string;
+}
+
+interface SummaryResponse {
+  newsletter_id?: number;
+  schedule_date?: string;
+  liturgical_season?: string;
+  calendar_year?: number;
+  title?: string;
+  summary?: string;
+}
 
 export default function Home({ forcePublic = false }: { forcePublic?: boolean }) {
   return (
@@ -62,20 +76,18 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
   const user = forcePublic ? null : stackUser;
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState<any>(null);
+  const [, setSummary] = useState<SummaryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [publicNewsletters, setPublicNewsletters] = useState<any[]>([]);
+  const [publicNewsletters, setPublicNewsletters] = useState<Newsletter[]>([]);
   const [fetchingNewsletters, setFetchingNewsletters] = useState(false);
   const [subscribersCount, setSubscribersCount] = useState(0);
 
   // New state for confirmation and editing
-  const [editMode, setEditMode] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [tags, setTags] = useState("");
-  const [updating, setUpdating] = useState(false);
+  const [, setScheduleDate] = useState("");
+  const [, setTags] = useState("");
   
   // Modal state for viewing summaries
-  const [selectedNewsletter, setSelectedNewsletter] = useState<any>(null);
+  const [selectedNewsletter, setSelectedNewsletter] = useState<Newsletter | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
 
   // Upload Modal State
@@ -84,14 +96,7 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
 
-  useEffect(() => {
-    fetchNewsletters();
-    if (user) {
-      fetchSubscribersCount();
-    }
-  }, [user]);
-
-  const fetchNewsletters = async () => {
+  const fetchNewsletters = useCallback(async () => {
     setFetchingNewsletters(true);
     try {
       const response = await fetch(`${backendUrl}/newsletters`);
@@ -104,9 +109,9 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
     } finally {
       setFetchingNewsletters(false);
     }
-  };
+  }, [backendUrl]);
 
-  const fetchSubscribersCount = async () => {
+  const fetchSubscribersCount = useCallback(async () => {
     try {
       const res = await fetch(`${backendUrl}/subscribers`);
       if (res.ok) {
@@ -116,7 +121,14 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
     } catch (err) {
       console.error("Failed to fetch subscribers stats:", err);
     }
-  };
+  }, [backendUrl]);
+
+  useEffect(() => {
+    fetchNewsletters();
+    if (user) {
+      fetchSubscribersCount();
+    }
+  }, [user, fetchNewsletters, fetchSubscribersCount]);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
@@ -134,7 +146,6 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
     setLoading(true);
     setError(null);
     setSummary(null);
-    setEditMode(false);
 
     const formData = new FormData();
     formData.append('file', file);
@@ -166,45 +177,13 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
       if (data.summary.calendar_year) tagsList.push(String(data.summary.calendar_year));
       
       setTags(tagsList.join(', '));
-      setEditMode(true);
       setUploadModalOpen(false); // Close modal on success
       setFile(null); // Clear selected file
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleConfirm = async () => {
-    if (!summary || !summary.newsletter_id) return;
-
-    setUpdating(true);
-    try {
-      const response = await fetch(`${backendUrl}/newsletters/${summary.newsletter_id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
-        },
-        body: JSON.stringify({
-          schedule_date: scheduleDate || null,
-          tags: tags || null,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update newsletter schedule');
-      }
-
-      // Refresh public feed and exit edit mode
-      fetchNewsletters();
-      setEditMode(false);
-      alert("Newsletter scheduled successfully!");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setUpdating(false);
     }
   };
 
@@ -563,6 +542,7 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
                   {latestScheduled.thumbnail_id && (
                     <Grid size={{ xs: 12, md: 4 }}>
                       <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 3, overflow: 'hidden', boxShadow: '0 6px 20px rgba(0,0,0,0.06)' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img 
                           src={`${backendUrl}/newsletters/${latestScheduled.id}/thumbnail`} 
                           alt="Thumbnail preview"
@@ -678,7 +658,7 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
             if (filteredNewsletters.length === 0) {
               return (
                 <Box sx={{ textAlign: 'center', py: 8, opacity: 0.6 }}>
-                  <Typography variant="body1">No newsletters match the filter category "{selectedTag}".</Typography>
+                  <Typography variant="body1">No newsletters match the filter category &quot;{selectedTag}&quot;.</Typography>
                   <Button variant="text" onClick={() => setSelectedTag(null)} sx={{ mt: 1, textTransform: 'none' }}>
                     Clear Filter
                   </Button>
@@ -757,12 +737,12 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
                         {item.drive_link && (
                           <IconButton 
                             size="small" 
-                            color="action" 
+                            color="default" 
                             href={item.drive_link} 
                             target="_blank"
                             title="Download original file"
                           >
-                            <DownloadIcon fontSize="small" />
+                            <DownloadIcon fontSize="small" color="action" />
                           </IconButton>
                         )}
                       </Stack>
@@ -863,6 +843,7 @@ function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
             {selectedNewsletter?.thumbnail_id && (
               <Grid size={{ xs: 12, md: 4 }}>
                 <Box sx={{ border: '1px solid #e0e0e0', borderRadius: 2, overflow: 'hidden' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img 
                     src={`${backendUrl}/newsletters/${selectedNewsletter.id}/thumbnail`} 
                     alt="Newsletter Thumbnail"

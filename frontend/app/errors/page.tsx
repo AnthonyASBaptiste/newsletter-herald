@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -43,6 +43,26 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import { useUser } from '@stackframe/stack';
 import Link from 'next/link';
 
+interface ErrorNewsletter {
+  id: number;
+  filename: string;
+  drive_link?: string;
+  target_sunday?: string;
+  title?: string;
+  summary?: string;
+  status: string;
+}
+
+interface UploadLog {
+  id: number;
+  filename?: string;
+  uploader?: string;
+  status: string;
+  created_at: string;
+  error_message?: string;
+  drive_link?: string;
+}
+
 export default function SystemErrorsPage() {
   return (
     <React.Suspense fallback={<Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>}>
@@ -54,15 +74,15 @@ export default function SystemErrorsPage() {
 function SystemErrorsPageContent() {
   const user = useUser({ or: 'redirect' });
   const [activeTab, setActiveTab] = useState(0);
-  const [errorLogs, setErrorLogs] = useState<any[]>([]);
-  const [uploadLogs, setUploadLogs] = useState<any[]>([]);
+  const [errorLogs, setErrorLogs] = useState<ErrorNewsletter[]>([]);
+  const [uploadLogs, setUploadLogs] = useState<UploadLog[]>([]);
   const [loadingNewsletters, setLoadingNewsletters] = useState(true);
   const [loadingLogs, setLoadingLogs] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
 
   // Edit Modal States
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<ErrorNewsletter | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editSummary, setEditSummary] = useState('');
   const [editDate, setEditDate] = useState('');
@@ -71,20 +91,13 @@ function SystemErrorsPageContent() {
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
 
-  useEffect(() => {
-    if (user) {
-      fetchErrorNewsletters();
-      fetchUploadLogs();
-    }
-  }, [user]);
-
-  const fetchErrorNewsletters = async () => {
+  const fetchErrorNewsletters = useCallback(async () => {
     setLoadingNewsletters(true);
     try {
       const response = await fetch(`${backendUrl}/newsletters`);
       if (response.ok) {
         const data = await response.json();
-        const failures = (data.newsletters || []).filter((n: any) => n.status === 'failed_validation');
+        const failures = (data.newsletters || []).filter((n: ErrorNewsletter) => n.status === 'failed_validation');
         setErrorLogs(failures);
       }
     } catch (err) {
@@ -92,9 +105,9 @@ function SystemErrorsPageContent() {
     } finally {
       setLoadingNewsletters(false);
     }
-  };
+  }, [backendUrl]);
 
-  const fetchUploadLogs = async () => {
+  const fetchUploadLogs = useCallback(async () => {
     setLoadingLogs(true);
     try {
       const response = await fetch(`${backendUrl}/upload-logs`, {
@@ -111,7 +124,14 @@ function SystemErrorsPageContent() {
     } finally {
       setLoadingLogs(false);
     }
-  };
+  }, [backendUrl]);
+
+  useEffect(() => {
+    if (user) {
+      fetchErrorNewsletters();
+      fetchUploadLogs();
+    }
+  }, [user, fetchErrorNewsletters, fetchUploadLogs]);
 
   const handleApprove = async (id: number) => {
     try {
@@ -149,7 +169,7 @@ function SystemErrorsPageContent() {
     }
   };
 
-  const openEditModal = (item: any) => {
+  const openEditModal = (item: ErrorNewsletter) => {
     setEditingItem(item);
     setEditTitle(item.title || '');
     setEditSummary(item.summary || '');
@@ -189,8 +209,9 @@ function SystemErrorsPageContent() {
       } else {
         alert("Saved details, but failed to approve automatically.");
       }
-    } catch (err: any) {
-      alert(`Error updating newsletter: ${err.message}`);
+    } catch (err) {
+      const error = err as Error;
+      alert(`Error updating newsletter: ${error.message}`);
     } finally {
       setSavingEdit(false);
     }
@@ -223,8 +244,9 @@ function SystemErrorsPageContent() {
       setMessage(`Successfully archived "${editTitle}" directly without scheduling!`);
       setEditModalOpen(false);
       fetchErrorNewsletters();
-    } catch (err: any) {
-      alert(`Error archiving newsletter: ${err.message}`);
+    } catch (err) {
+      const error = err as Error;
+      alert(`Error archiving newsletter: ${error.message}`);
     } finally {
       setSavingArchive(false);
     }
@@ -311,7 +333,7 @@ function SystemErrorsPageContent() {
           ) : (
             <Grid container spacing={3}>
               {errorLogs.map((item) => (
-                <Grid item xs={12} md={6} key={item.id}>
+                <Grid size={{ xs: 12, md: 6 }} key={item.id}>
                   <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.03)', border: '1px solid #fce8e6', bgcolor: '#fdf7f7', height: '100%', display: 'flex', flexDirection: 'column' }}>
                     <CardContent sx={{ p: 3, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
