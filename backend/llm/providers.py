@@ -176,31 +176,48 @@ def summarize_with_groq(prompt: str, timeout: int = 60) -> Dict[str, str]:
         "max_tokens": 1024
     }
 
-    try:
-        response = requests.post(
-            "https://api.groq.com/openai/v1/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=timeout
-        )
-        response.raise_for_status()
+    import time
+    max_retries = 5
+    retry_delay = 70
+    last_exception = None
 
-        data = response.json()
-        import json
-        resp_data = json.loads(data["choices"][0]["message"]["content"])
-        return {
-            "title": resp_data.get("title", "Church Newsletter"),
-            "summary": resp_data.get("summary", ""),
-            "schedule_date": resp_data.get("schedule_date"),
-            "liturgical_season": resp_data.get("liturgical_season"),
-            "calendar_year": resp_data.get("calendar_year"),
-            "liturgical_year": resp_data.get("liturgical_year")
-        }
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=timeout
+            )
+            if response.status_code == 429:
+                logger.warning(f"Groq API returned 429 (Too Many Requests). Retrying in {retry_delay}s... (Attempt {attempt+1}/{max_retries})")
+                time.sleep(retry_delay)
+                # Keep delay high to clear the 60-second window
+                continue
 
-    except Exception as e:
-        error_msg = f"Groq API failed: {str(e)}"
-        logger.error(error_msg)
-        raise Exception(error_msg)
+            response.raise_for_status()
+
+            data = response.json()
+            import json
+            resp_data = json.loads(data["choices"][0]["message"]["content"])
+            return {
+                "title": resp_data.get("title", "Church Newsletter"),
+                "summary": resp_data.get("summary", ""),
+                "schedule_date": resp_data.get("schedule_date"),
+                "liturgical_season": resp_data.get("liturgical_season"),
+                "calendar_year": resp_data.get("calendar_year"),
+                "liturgical_year": resp_data.get("liturgical_year")
+            }
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"Groq API call attempt {attempt+1}/{max_retries} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+
+    error_msg = f"Groq API failed after {max_retries} attempts: {last_exception}"
+    logger.error(error_msg)
+    raise Exception(error_msg)
+
 
 
 def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
@@ -208,6 +225,12 @@ def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
     Summarizes a given text into a title and a 2-paragraph email message.
     Respects the configured LLM strategy.
     """
+    # Truncate text if it's extremely long to avoid 413 Payload Too Large and stay within context limits
+    max_chars = 18000
+    if len(text) > max_chars:
+        logger.info(f"Truncating text from {len(text)} to {max_chars} characters to fit context limits.")
+        text = text[:max_chars] + "\n...[TRUNCATED FOR LENGTH]..."
+
     prompt = f"Summarize this church newsletter: {text}"
     token_estimate = count_tokens(prompt)
 
@@ -254,9 +277,22 @@ def choose_llm_and_summarize(text: str) -> Dict[str, Any]:
             res = summarize_with_model(prompt)
             cost_estimate = 0
 
+    # Defensive sanitization for local LLM nested dictionary structures
+    title_val = res.get("title", "Church Newsletter")
+    if isinstance(title_val, dict):
+        title_val = title_val.get("title") or title_val.get("text") or str(title_val)
+    elif not isinstance(title_val, str):
+        title_val = str(title_val)
+
+    summary_val = res.get("summary", "")
+    if isinstance(summary_val, dict):
+        summary_val = summary_val.get("summary") or summary_val.get("text") or str(summary_val)
+    elif not isinstance(summary_val, str):
+        summary_val = str(summary_val)
+
     return {
-        "title": res["title"],
-        "summary": res["summary"],
+        "title": title_val,
+        "summary": summary_val,
         "schedule_date": res.get("schedule_date"),
         "liturgical_season": res.get("liturgical_season"),
         "calendar_year": res.get("calendar_year"),

@@ -10,7 +10,7 @@ export default function AuthButtons() {
   if (user) {
     return (
       <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-        <Typography variant="body2" sx={{ fontWeight: 600 }}>
+        <Typography variant="body2" sx={{ fontWeight: 600, display: { xs: 'none', sm: 'block' } }}>
           {user.primaryEmail}
         </Typography>
         <Button 
@@ -26,7 +26,7 @@ export default function AuthButtons() {
   }
 
   return (
-    <Box sx={{ display: 'flex', gap: 2 }}>
+    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
       <Link href="/handler/sign-in" style={{ textDecoration: 'none' }}>
         <Button 
           variant="text" 
@@ -35,15 +35,16 @@ export default function AuthButtons() {
           Login
         </Button>
       </Link>
-      <Link href="/handler/sign-up" style={{ textDecoration: 'none' }}>
+      <Link href="/signup" style={{ textDecoration: 'none' }}>
         <Button 
           variant="contained" 
           color="primary" 
-          sx={{ px: 3 }} 
+          sx={{ px: 3, borderRadius: '980px', textTransform: 'none', fontWeight: 600 }} 
         >
-          Sign Up
+          Join Mailing List
         </Button>
       </Link>
     </Box>
   );
 }
+

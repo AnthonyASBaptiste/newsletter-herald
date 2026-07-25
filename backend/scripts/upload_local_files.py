@@ -11,12 +11,15 @@ sys.path.append(backend_dir)
 
 from config import get_settings
 from db.setup import database
-from db.models import newsletters, summaries, model_usage
+from db.models import newsletters, summaries, model_usage, upload_logs
 from helpers.storage import upload_to_drive, make_file_public
 from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
+from helpers.validation import validate_newsletter_date
 from llm.providers import choose_llm_and_summarize
-
+from datetime import datetime
 # Configure logging
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -93,9 +96,25 @@ async def process_local_files():
                     except Exception as thumb_err:
                         logger.error(f"Failed to generate thumbnail for {new_filename}: {thumb_err}")
 
-                # Save to DB
+                 # Save to DB
                 try:
                     logger.info(f"Saving {new_filename} to DB...")
+                    
+                    # Parse schedule_date and target_sunday for historical files
+                    schedule_date_str = summary_data.get("schedule_date")
+                    schedule_date_val = None
+                    target_sunday = None
+                    status = "failed_validation"
+
+                    if isinstance(schedule_date_str, str):
+                        try:
+                            schedule_date_val = datetime.strptime(schedule_date_str, "%Y-%m-%d").date()
+                            target_sunday = schedule_date_val
+                            status = "delivered" # Historical bulletins are already published
+                        except Exception:
+                            pass
+
+
                     async with database.transaction():
                         # Construct tags string
                         tags_list = []
@@ -115,12 +134,15 @@ async def process_local_files():
                                 drive_web_view_link=web_view_link,
                                 thumbnail_drive_id=thumbnail_drive_id,
                                 uploader="local_batch_upload",
-                                schedule_date=summary_data.get("schedule_date"),
+                                schedule_date=schedule_date_val,
                                 tags=tags_str,
-                                delivered=False
+                                delivered=False,
+                                status=status,
+                                target_sunday=target_sunday
                             )
                         )
                         logger.info(f"Inserted newsletter ID: {newsletter_id}")
+
                         
                         summary_id = await database.execute(
                             summaries.insert().values(
@@ -140,12 +162,34 @@ async def process_local_files():
                             )
                         )
                     logger.info(f"Successfully processed and SAVED to DB: {new_filename}")
+                    await database.execute(
+                        upload_logs.insert().values(
+                            filename=new_filename,
+                            uploader="local_batch_upload",
+                            status="success"
+                        )
+                    )
                 except Exception as db_err:
                     logger.error(f"DATABASE INSERT FAILED for {new_filename}: {db_err}")
                     raise # Re-raise to be caught by outer try-except
 
             except Exception as e:
                 logger.error(f"Failed to process {filename}: {e}", exc_info=True)
+                try:
+                    await database.execute(
+                        upload_logs.insert().values(
+                            filename=filename,
+                            uploader="local_batch_upload",
+                            status="failed",
+                            error_message=str(e)
+                        )
+                    )
+                except Exception as db_log_err:
+                    logger.error(f"Failed to log upload failure to DB: {db_log_err}")
+            
+            # Avoid API rate limiting
+            await asyncio.sleep(1.5)
+
 
     finally:
         await database.disconnect()

@@ -73,7 +73,7 @@ def sanitize_filename(filename: str) -> str:
         logger.warning(f"No date found in filename '{filename}', falling back to {found_date}")
     
     date_str = found_date.strftime('%Y-%m-%d')
-    return f"{date_str}-SALLTO-Newsletter{ext.lower()}"
+    return f"{date_str}-Trinity-Newsletter{ext.lower()}"
 
 def compress_pdf(pdf_bytes: bytes) -> bytes:
     """

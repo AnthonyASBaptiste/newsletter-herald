@@ -6,3 +6,4 @@ newsletters_to_upload/*
 **/*.pyc
 **/*.pyo
 **/*.pyd
+GRAPH.md

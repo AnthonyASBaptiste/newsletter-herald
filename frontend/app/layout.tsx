@@ -30,7 +30,18 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Herald - Church Newsletter Summaries",
   description: "Summarize Roman Catholic church newsletters with ease.",
+  icons: {
+    icon: [
+      { url: '/favicon.ico' },
+      { url: '/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    shortcut: '/favicon.ico',
+    apple: '/apple-touch-icon.png',
+  },
+  manifest: '/site.webmanifest',
 };
+
 
 export default function RootLayout({
   children,
@@ -59,13 +70,12 @@ export default function RootLayout({
                           </Box>
                         </Link>
                         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                          <Link href="#" style={{ textDecoration: 'none', color: 'inherit' }}>
-                            <Button color="inherit" sx={{ fontWeight: 500 }}>About</Button>
-                          </Link>
                           <React.Suspense fallback={<Box sx={{ width: 100 }} />}>
                             <AuthButtons />
                           </React.Suspense>
                         </Box>
+
+
                       </Toolbar>
                     </Container>
                   </AppBar>

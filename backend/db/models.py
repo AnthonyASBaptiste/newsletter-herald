@@ -48,6 +48,9 @@ subscribers = Table(
     metadata,
     Column("id", Integer, primary_key=True),
     Column("email", String, unique=True, index=True, nullable=False),
+    Column("first_name", String, nullable=True),
+    Column("last_name", String, nullable=True),
+    Column("phone", String, nullable=True),
     Column("is_active", Boolean, default=True),
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
 )
@@ -71,3 +74,15 @@ agent_notifications = Table(
     Column("payload", Text, nullable=False), # JSON payload
     Column("created_at", DateTime(timezone=True), server_default=func.now()),
 )
+
+upload_logs = Table(
+    "upload_logs",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("filename", String, nullable=False),
+    Column("uploader", String, nullable=False),
+    Column("status", String, nullable=False), # "success", "failed"
+    Column("error_message", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+

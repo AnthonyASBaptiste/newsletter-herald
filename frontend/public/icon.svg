@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Premium Gold Gradient -->
+    <linearGradient id="gold" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE082" />
+      <stop offset="30%" stop-color="#FFD54F" />
+      <stop offset="70%" stop-color="#FFB300" />
+      <stop offset="100%" stop-color="#FF8F00" />
+    </linearGradient>
+    <!-- Background Gradient -->
+    <linearGradient id="bg" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E1E24" />
+      <stop offset="100%" stop-color="#0E0E11" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Rounded Square Background -->
+  <rect width="512" height="512" rx="128" fill="url(#bg)" />
+  
+  <!-- Gold Heraldic Trumpet -->
+  <g transform="translate(256, 256) rotate(-45) translate(-256, -256)">
+    <!-- Mouthpiece -->
+    <rect x="70" y="240" width="12" height="32" rx="4" fill="url(#gold)" />
+    <!-- Leadpipe -->
+    <rect x="82" y="248" width="220" height="16" fill="url(#gold)" />
+    <!-- Bell Flare -->
+    <path d="M 302 248 
+             L 410 210 
+             A 12 60 0 0 1 410 302 
+             L 302 264 
+             Z" fill="url(#gold)" />
+    <!-- Bell Rim / Lip -->
+    <ellipse cx="410" cy="256" rx="8" ry="46" fill="url(#gold)" />
+    <!-- Connecting brace/detail -->
+    <rect x="180" y="236" width="6" height="40" rx="2" fill="url(#gold)" opacity="0.8" />
+  </g>
+</svg>
