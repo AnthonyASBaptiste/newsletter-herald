@@ -39,7 +39,7 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import HomeIcon from '@mui/icons-material/Home';
 import Link from 'next/link';
-import { useUser } from "@stackframe/stack";
+import { useUser, useClerk } from "@clerk/nextjs";
 
 interface Subscriber {
   id: number;
@@ -66,8 +66,60 @@ export default function SubscribersPage() {
 }
 
 function SubscribersPageContent() {
-  useUser({ or: 'redirect' });
+  const { isLoaded, isSignedIn, user } = useUser();
+  const { signOut } = useClerk();
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
+
+  useEffect(() => {
+    if (isLoaded && !isSignedIn) {
+      window.location.href = '/';
+    }
+  }, [isLoaded, isSignedIn]);
+
+  if (!isLoaded || !isSignedIn) {
+    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
+  }
+
+  const userEmail = user?.primaryEmailAddress?.emailAddress;
+
+  // Admin Email Whitelist check
+  const ADMIN_WHITELIST = ['sallto.newsletter@gmail.com', 'anthony.as.baptiste@gmail.com'];
+  const hasAdminAccess = userEmail && ADMIN_WHITELIST.includes(userEmail);
+
+  if (!hasAdminAccess) {
+    return (
+      <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f7', p: 3 }}>
+        <Paper sx={{ p: 5, maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)' }}>
+          <Box sx={{ width: 64, height: 64, bgcolor: '#fce8e6', color: '#d93025', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
+            <PeopleIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.01em', color: '#1d1d1f' }}>
+            Access Denied
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
+            Your account (<strong>{userEmail}</strong>) is not authorized to access subscriber management.
+          </Typography>
+          <Stack spacing={2} direction="row" justifyContent="center">
+            <Button 
+              variant="outlined" 
+              onClick={() => signOut()} 
+              sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
+            >
+              Sign Out
+            </Button>
+            <Link href="/" style={{ textDecoration: 'none' }}>
+              <Button 
+                variant="contained" 
+                sx={{ borderRadius: '980px', textTransform: 'none', px: 3, bgcolor: '#0071e3', '&:hover': { bgcolor: '#0077ed' } }}
+              >
+                Go to Dashboard
+              </Button>
+            </Link>
+          </Stack>
+        </Paper>
+      </Box>
+    );
+  }
 
   const [stats, setStats] = useState<Stats>({ total: 0, active: 0, inactive: 0 });
   const [loading, setLoading] = useState<boolean>(true);
