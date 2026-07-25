@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import Home from '../page';
+import { HomeContent } from '../HomeContent';
 import { Box, Button, Container, Typography } from '@mui/material';
 import Link from 'next/link';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
@@ -30,7 +30,7 @@ export default function PreviewPage() {
       </Box>
 
       {/* Main Home Page forced to Public */}
-      <Home forcePublic={true} />
+      <HomeContent forcePublic={true} />
     </Box>
   );
 }

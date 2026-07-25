@@ -7,13 +7,13 @@ An automated pipeline for summarizing Roman Catholic church newsletters into war
 Newsletter Herald is a full-stack application that automates the extraction, summarization, and management of church newsletters. It features a robust FastAPI backend for document processing and an interactive Next.js frontend for visualization and management.
 
 ### Key Features
-- **Multi-Source Support**: Processes PDF and DOCX files.
-- **Intelligent Summarization**: Integrated with multiple LLM providers:
-  - **Local**: Ollama (Llama 3.3 70B recommended for high quality).
-  - **Remote**: Groq (Llama 3.3 70B) and Anthropic (Claude 3 Opus).
-- **Hybrid Storage**: Uses Cloudflare R2 for file storage and Google Drive for backups.
-- **Automated Workflow**: Batch processing scripts for local files and Google Drive integration.
-- **Modern UI**: Clean, responsive dashboard built with Next.js and Material UI.
+- **Intelligent Summarization**: Integrated with dual LLM providers:
+  - **Local**: Ollama (Llama 3.1 8B for local history seeding to prevent rate limits).
+  - **Remote**: Groq Cloud (Llama 3.1 70B for fast runtime summaries).
+- **Hybrid Storage & Sync**: Uses Cloudflare R2 for file storage and Google Drive for backups.
+- **Subscriber Directory Sync**: Synchronizes Gmail CSV contacts into PostgreSQL with advanced name/phone mapping.
+- **Human-in-the-Loop Override**: Features interactive metadata validation failure overrides and selective email dispatch queue bypassing ("Archive Only").
+- **Secure Admin Controls**: Access locked down with Clerk Auth and whitelist restrictions.
 
 ## Repository Structure
 
@@ -63,10 +63,9 @@ npm start
 ## LLM Strategy
 
 The project supports a flexible LLM strategy configured via `.env`:
-- `local`: Forces usage of local Ollama (Llama 3.3).
+- `local`: Forces usage of local Ollama (Llama 3.1).
 - `groq`: Forces high-speed Groq API.
-- `remote`: Forces Claude 3 (Anthropic).
-- `auto`: Automatically switches based on document size and availability.
+- `auto`: Automatically routes queries based on document availability.
 
 ## License
 [MIT](LICENSE)
