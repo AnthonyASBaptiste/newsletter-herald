@@ -3,7 +3,6 @@ import logging
 from typing import Dict, Any, Optional
 
 from config import get_settings
-from helpers.constants import ANTHROPIC_API_KEY
 from helpers.text_utils import count_tokens
 
 # Get settings from centralized configuration
