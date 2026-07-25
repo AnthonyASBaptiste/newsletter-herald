@@ -22,6 +22,17 @@ SANITIZATION_INSTRUCTION = (
     "The goal is a public-facing summary that protects the privacy of all individuals mentioned in the original newsletter."
 )
 
+GROQ_SYSTEM_INSTRUCTION = (
+    "You are a helpful assistant that summarizes Roman Catholic church newsletters. Return your response as a JSON object with the following keys:\n"
+    "1. 'title': A warm, descriptive subject line.\n"
+    "2. 'summary': A warm, 2-paragraph email message.\n"
+    "3. 'schedule_date': Newsletter date in YYYY-MM-DD format.\n"
+    "4. 'liturgical_season': Liturgical season (e.g., 'Ordinary Time', 'Lent', 'Advent', 'Christmas', 'Easter').\n"
+    "5. 'calendar_year': Calendar year (e.g., '2025').\n"
+    "6. 'liturgical_year': Liturgical year (e.g., 'Year A', 'Year B', 'Year C')."
+    f"\n\n{SANITIZATION_INSTRUCTION}"
+)
+
 
 def summarize_with_model(prompt: str, timeout: int = 300) -> Dict[str, str]:
     """
@@ -38,7 +49,7 @@ def summarize_with_model(prompt: str, timeout: int = 300) -> Dict[str, str]:
         "3. 'schedule_date': The date the newsletter is for, in YYYY-MM-DD format.\n"
         "4. 'liturgical_season': The liturgical season (e.g., 'Ordinary Time', 'Lent', 'Advent', 'Christmas', 'Easter').\n"
         "5. 'calendar_year': The calendar year (e.g., '2025').\n"
-        "6. 'liturgical_year': The liturgical year (e.g., 'Year A', 'Year B', 'Year C').\n"
+        "6. 'liturgical_year': The liturgical year (e.g., 'Year A', 'Year B', 'Year C')."
         f"\n{SANITIZATION_INSTRUCTION}"
     )
     full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
@@ -158,16 +169,7 @@ def summarize_with_groq(prompt: str, timeout: int = 60) -> Dict[str, str]:
         "messages": [
             {
                 "role": "system", 
-                "content": (
-                    "You are a helpful assistant that summarizes Roman Catholic church newsletters. Return your response as a JSON object with the following keys:\n"
-                    "1. 'title': A warm, descriptive subject line.\n"
-                    "2. 'summary': A warm, 2-paragraph email message.\n"
-                    "3. 'schedule_date': Newsletter date in YYYY-MM-DD format.\n"
-                    "4. 'liturgical_season': Liturgical season (e.g., 'Ordinary Time', 'Lent', 'Advent', 'Christmas', 'Easter').\n"
-                    "5. 'calendar_year': Calendar year (e.g., '2025').\n"
-                    "6. 'liturgical_year': Liturgical year (e.g., 'Year A', 'Year B', 'Year C')."
-                    f"\n\n{SANITIZATION_INSTRUCTION}"
-                )
+                "content": GROQ_SYSTEM_INSTRUCTION
             },
             {"role": "user", "content": prompt}
         ],
