@@ -33,18 +33,27 @@ async def process_files():
         drive_files = list_files_in_folder(settings.google_drive_folder_id)
         logger.info(f"Found {len(drive_files)} files in folder.")
 
-        for df in drive_files:
+        # Filter files of correct mime type and extract their IDs
+        filtered_files = [
+            df for df in drive_files
+            if df.get('mimeType') in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+        ]
+        file_ids = [df['id'] for df in filtered_files]
+
+        if file_ids:
+            from sqlalchemy import select
+            query = select(newsletters.c.drive_file_id).where(newsletters.c.drive_file_id.in_(file_ids))
+            existing_rows = await database.fetch_all(query)
+            existing_drive_ids = {row['drive_file_id'] for row in existing_rows}
+        else:
+            existing_drive_ids = set()
+
+        for df in filtered_files:
             file_id = df['id']
             filename = df['name']
-            mime_type = df['mimeType']
 
-            if mime_type not in ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]:
-                continue
-
-            # Check if already in DB (by filename or drive ID)
-            query = newsletters.select().where(newsletters.c.drive_file_id == file_id)
-            existing = await database.fetch_one(query)
-            if existing:
+            # Check if already in DB (by drive ID)
+            if file_id in existing_drive_ids:
                 logger.info(f"Skipping already processed file: {filename}")
                 continue
 

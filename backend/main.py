@@ -103,8 +103,6 @@ async def upload_summary(
     """
     Handles the uploading and summarization of document files.
     """
-    Handles the uploading and summarization of document files.
-    """
     uploader = request.headers.get("x-user-email", "api_user")
     filename = file.filename
     
@@ -844,19 +842,19 @@ async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONRes
     """
     from db.models import agent_notifications
     try:
-        # 1. Fetch all pending notifications
-        query = select(agent_notifications).order_by(agent_notifications.c.created_at.asc())
-        rows = await database.fetch_all(query)
+        # Delete and return notifications atomically in a single query
+        delete_query = agent_notifications.delete().returning(
+            agent_notifications.c.payload,
+            agent_notifications.c.created_at
+        )
+        rows = await database.fetch_all(delete_query)
+
+        # Sort rows in-memory by created_at asc to guarantee chronological order
+        sorted_rows = sorted(rows, key=lambda r: r["created_at"]) if rows else []
         
         result = []
-        for row in rows:
+        for row in sorted_rows:
             result.append(json.loads(row["payload"]))
-            
-        # 2. Delete the fetched notifications
-        if rows:
-            ids = [row["id"] for row in rows]
-            delete_query = agent_notifications.delete().where(agent_notifications.c.id.in_(ids))
-            await database.execute(delete_query)
             
         return JSONResponse(content={"notifications": result})
     except Exception as e:
@@ -878,4 +876,3 @@ async def trigger_newsletter_delivery(_: None = Depends(verify_api_key)) -> JSON
     except Exception as e:
         logger.error(f"Failed to initiate delivery: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
