@@ -12,6 +12,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from starlette.concurrency import run_in_threadpool
 
 from helpers.key_utils import verify_api_key
 from helpers.text_utils import (
@@ -37,6 +38,25 @@ settings = get_settings()
 
 # Create a logger for this module
 logger = logging.getLogger(__name__)
+
+
+def sync_extract_text(contents: bytes, content_type: str) -> str:
+    """
+    Synchronously extracts text from the document bytes.
+    This function should be run in a threadpool to prevent blocking the async event loop.
+    """
+    if content_type == "application/pdf":
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file_path = temp_file.name
+            temp_file.write(contents)
+
+        try:
+            return extract_text_from_file(temp_file_path, file_type="pdf")
+        finally:
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+    else:
+        return extract_text_from_file(io.BytesIO(contents), file_type="docx")
 
 
 @asynccontextmanager
@@ -995,7 +1015,7 @@ async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONRes
         rows = await database.fetch_all(query)
 
         result = []
-        for row in rows:
+        for row in sorted_rows:
             result.append(json.loads(row["payload"]))
 
         # 2. Delete the fetched notifications
