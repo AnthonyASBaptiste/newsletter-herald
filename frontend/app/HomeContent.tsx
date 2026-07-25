@@ -77,40 +77,6 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   const ADMIN_WHITELIST = ['sallto.newsletter@gmail.com', 'anthony.as.baptiste@gmail.com'];
   const hasAdminAccess = !user || (userEmail && ADMIN_WHITELIST.includes(userEmail));
 
-  if (user && !hasAdminAccess) {
-    return (
-      <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f7', p: 3 }}>
-        <Paper sx={{ p: 5, maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)' }}>
-          <Box sx={{ width: 64, height: 64, bgcolor: '#fce8e6', color: '#d93025', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
-            <WarningIcon sx={{ fontSize: 32 }} />
-          </Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.01em', color: '#1d1d1f' }}>
-            Access Denied
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
-            Your account (<strong>{userEmail}</strong>) is not authorized as an administrator for SALLTO Herald.
-          </Typography>
-          <Stack spacing={2} direction="row" justifyContent="center">
-            <Button 
-              variant="outlined" 
-              onClick={() => signOut()} 
-              sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
-            >
-              Sign Out
-            </Button>
-            <Link href="/?forcePublic=true" style={{ textDecoration: 'none' }}>
-              <Button 
-                variant="contained" 
-                sx={{ borderRadius: '980px', textTransform: 'none', px: 3, bgcolor: '#0071e3', '&:hover': { bgcolor: '#0077ed' } }}
-              >
-                View Public Feed
-              </Button>
-            </Link>
-          </Stack>
-        </Paper>
-      </Box>
-    );
-  }
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [, setSummary] = useState<SummaryResponse | null>(null);
@@ -166,6 +132,41 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       fetchSubscribersCount();
     }
   }, [user, fetchNewsletters, fetchSubscribersCount]);
+
+  if (user && !hasAdminAccess) {
+    return (
+      <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f7', p: 3 }}>
+        <Paper sx={{ p: 5, maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)' }}>
+          <Box sx={{ width: 64, height: 64, bgcolor: '#fce8e6', color: '#d93025', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
+            <WarningIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.01em', color: '#1d1d1f' }}>
+            Access Denied
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
+            Your account (<strong>{userEmail}</strong>) is not authorized as an administrator for SALLTO Herald.
+          </Typography>
+          <Stack spacing={2} direction="row" justifyContent="center">
+            <Button 
+              variant="outlined" 
+              onClick={() => signOut()} 
+              sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
+            >
+              Sign Out
+            </Button>
+            <Link href="/?forcePublic=true" style={{ textDecoration: 'none' }}>
+              <Button 
+                variant="contained" 
+                sx={{ borderRadius: '980px', textTransform: 'none', px: 3, bgcolor: '#0071e3', '&:hover': { bgcolor: '#0077ed' } }}
+              >
+                View Public Feed
+              </Button>
+            </Link>
+          </Stack>
+        </Paper>
+      </Box>
+    );
+  }
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
