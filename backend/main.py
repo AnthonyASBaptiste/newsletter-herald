@@ -4,8 +4,8 @@ import os
 import io
 import json
 import asyncio
-from typing import Dict, Any, Optional
-from datetime import datetime, date
+from typing import Dict, Any
+from datetime import datetime
 from pydantic import BaseModel
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
@@ -15,7 +15,12 @@ from contextlib import asynccontextmanager
 from starlette.concurrency import run_in_threadpool
 
 from helpers.key_utils import verify_api_key
-from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
+from helpers.text_utils import (
+    extract_text_from_file,
+    generate_pdf_thumbnail,
+    sanitize_filename,
+    compress_pdf,
+)
 from helpers.storage import upload_to_drive, download_from_drive
 from helpers.validation import validate_newsletter_date
 from helpers.agent_bridge import notify_agent
@@ -69,12 +74,13 @@ async def lifespan(app: FastAPI):
     await database.disconnect()
     logger.info("Database disconnected")
 
+
 app = FastAPI(
     title=settings.app_name,
     description="The API Gateway acts as a single entry point that manages client requests and delegates them to the "
-                "appropriate backend services.",
+    "appropriate backend services.",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Configure CORS
@@ -107,7 +113,7 @@ async def health_check() -> Dict[str, Any]:
         return {
             "status": "healthy",
             "database": "connected",
-            "app_name": settings.app_name
+            "app_name": settings.app_name,
         }
     except Exception as e:
         logger.error(f"Health check failed - Database unreachable: {e}")
@@ -116,20 +122,18 @@ async def health_check() -> Dict[str, Any]:
 
 @app.post("/upload-document")
 async def upload_summary(
-    request: Request,
-    file: UploadFile = File(...),
-    _: None = Depends(verify_api_key)
+    request: Request, file: UploadFile = File(...), _: None = Depends(verify_api_key)
 ) -> JSONResponse:
     """
     Handles the uploading and summarization of document files.
     """
     uploader = request.headers.get("x-user-email", "api_user")
     filename = file.filename
-    
+
     # Validate file type
     accepted_types = [
         "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     ]
     if file.content_type not in accepted_types:
         logger.warning(f"Unsupported file type: {file.content_type}")
@@ -138,20 +142,37 @@ async def upload_summary(
     try:
         # Read file contents
         contents = await file.read()
-        
-        # Extract text from file asynchronously on threadpool to avoid blocking event loop
+
+        # Extract text from file
         try:
-            text = await run_in_threadpool(sync_extract_text, contents, file.content_type)
+            if file.content_type == "application/pdf":
+                with tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".pdf"
+                ) as temp_file:
+                    temp_file_path = temp_file.name
+                    temp_file.write(contents)
+
+                try:
+                    text = extract_text_from_file(temp_file_path, file_type="pdf")
+                finally:
+                    if os.path.exists(temp_file_path):
+                        os.unlink(temp_file_path)
+            else:
+                file.file.seek(0)
+                text = extract_text_from_file(file.file, file_type="docx")
+
             logger.debug(f"Text extracted successfully from {file.filename}")
         except Exception as e:
             logger.error(f"Error extracting text from file: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error extracting text: {str(e)}")
+            raise HTTPException(
+                status_code=500, detail=f"Error extracting text: {str(e)}"
+            )
 
         # Generate summary
         try:
             logger.info("Generating summary using LLM")
             summary = choose_llm_and_summarize(text)
-            
+
             # Sanitize and standardize filename
             standard_filename = sanitize_filename(file.filename)
             logger.info(f"Standardized filename: {standard_filename}")
@@ -164,7 +185,9 @@ async def upload_summary(
 
             # Upload to Google Drive / R2
             logger.info("Uploading file to Google Drive")
-            drive_file_id, web_view_link = upload_to_drive(final_contents, standard_filename, file.content_type)
+            drive_file_id, web_view_link = upload_to_drive(
+                final_contents, standard_filename, file.content_type
+            )
 
             # Generate and upload thumbnail if it's a PDF
             thumbnail_drive_id = None
@@ -173,7 +196,9 @@ async def upload_summary(
                     logger.info("Generating PDF thumbnail")
                     thumbnail_data = generate_pdf_thumbnail(io.BytesIO(final_contents))
                     thumbnail_filename = f"thumb_{standard_filename}.png"
-                    thumbnail_drive_id, _ = upload_to_drive(thumbnail_data, thumbnail_filename, "image/png")
+                    thumbnail_drive_id, _ = upload_to_drive(
+                        thumbnail_data, thumbnail_filename, "image/png"
+                    )
                 except Exception as thumb_err:
                     logger.error(f"Failed to generate thumbnail: {thumb_err}")
 
@@ -185,34 +210,48 @@ async def upload_summary(
                 tags_list.append(str(summary["calendar_year"]))
             if summary.get("liturgical_year"):
                 tags_list.append(summary["liturgical_year"])
-            
+
             tags_str = ", ".join(tags_list) if tags_list else None
 
             # Validate newsletter date
-            is_valid, target_sunday, error_msg = validate_newsletter_date(summary.get("schedule_date"))
+            is_valid, target_sunday, error_msg = validate_newsletter_date(
+                summary.get("schedule_date")
+            )
             if isinstance(target_sunday, str):
                 try:
                     target_sunday = datetime.strptime(target_sunday, "%Y-%m-%d").date()
                 except Exception:
                     pass
             status = "draft" if is_valid else "failed_validation"
-            logger.info(f"Date validation: is_valid={is_valid}, target_sunday={target_sunday}, status={status}")
+            logger.info(
+                f"Date validation: is_valid={is_valid}, target_sunday={target_sunday}, status={status}"
+            )
 
             # Supersede older files for the same Sunday issue
-            logger.info(f"Marking existing drafts/scheduled newsletters for Sunday {target_sunday} as superseded")
-            update_query = newsletters.update().where(
-                and_(
-                    newsletters.c.target_sunday == target_sunday,
-                    newsletters.c.status.in_(["draft", "scheduled", "failed_validation"])
+            logger.info(
+                f"Marking existing drafts/scheduled newsletters for Sunday {target_sunday} as superseded"
+            )
+            update_query = (
+                newsletters.update()
+                .where(
+                    and_(
+                        newsletters.c.target_sunday == target_sunday,
+                        newsletters.c.status.in_(
+                            ["draft", "scheduled", "failed_validation"]
+                        ),
+                    )
                 )
-            ).values(status="superseded")
+                .values(status="superseded")
+            )
             await database.execute(update_query)
 
             schedule_date_str = summary.get("schedule_date")
             schedule_date_val = None
             if isinstance(schedule_date_str, str):
                 try:
-                    schedule_date_val = datetime.strptime(schedule_date_str, "%Y-%m-%d").date()
+                    schedule_date_val = datetime.strptime(
+                        schedule_date_str, "%Y-%m-%d"
+                    ).date()
                 except Exception:
                     schedule_date_val = None
 
@@ -229,7 +268,7 @@ async def upload_summary(
                     tags=tags_str,
                     delivered=False,
                     status=status,
-                    target_sunday=target_sunday
+                    target_sunday=target_sunday,
                 )
             )
 
@@ -252,9 +291,11 @@ async def upload_summary(
                     cost_usd_estimate=summary["cost_usd_estimate"],
                 )
             )
-            
-            logger.info(f"Summary generated and stored successfully (Newsletter ID: {newsletter_id}, Summary ID: {summary_id})")
-            
+
+            logger.info(
+                f"Summary generated and stored successfully (Newsletter ID: {newsletter_id}, Summary ID: {summary_id})"
+            )
+
             # Add drive info to response
             summary["newsletter_id"] = newsletter_id
             summary["thumbnail_drive_id"] = thumbnail_drive_id
@@ -265,48 +306,54 @@ async def upload_summary(
 
             # Notify local agent of the review request or validation failure
             if is_valid:
-                await notify_agent("review_request", {
-                    "newsletter_id": newsletter_id,
-                    "title": summary["title"],
-                    "summary": summary["summary"],
-                    "target_sunday": target_sunday,
-                    "status": status
-                })
+                await notify_agent(
+                    "review_request",
+                    {
+                        "newsletter_id": newsletter_id,
+                        "title": summary["title"],
+                        "summary": summary["summary"],
+                        "target_sunday": target_sunday,
+                        "status": status,
+                    },
+                )
             else:
-                await notify_agent("validation_alert", {
-                    "newsletter_id": newsletter_id,
-                    "filename": standard_filename,
-                    "target_sunday": target_sunday,
-                    "status": status,
-                    "error_message": error_msg
-                })
+                await notify_agent(
+                    "validation_alert",
+                    {
+                        "newsletter_id": newsletter_id,
+                        "filename": standard_filename,
+                        "target_sunday": target_sunday,
+                        "status": status,
+                        "error_message": error_msg,
+                    },
+                )
         except Exception as e:
             logger.error(f"LLM error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
-            
+
         # Log success
         await database.execute(
             upload_logs.insert().values(
-                filename=filename,
-                uploader=uploader,
-                status="success"
+                filename=filename, uploader=uploader, status="success"
             )
         )
-        
-        return JSONResponse(content={
-            "summary": summary,
-            "validation": {
-                "is_valid": is_valid,
-                "target_sunday": target_sunday.isoformat(),
-                "error_message": error_msg
-            },
-            "detail": "Newsletter uploaded and summary generated successfully."
-        })
-        
+
+        return JSONResponse(
+            content={
+                "summary": summary,
+                "validation": {
+                    "is_valid": is_valid,
+                    "target_sunday": target_sunday.isoformat(),
+                    "error_message": error_msg,
+                },
+                "detail": "Newsletter uploaded and summary generated successfully.",
+            }
+        )
+
     except Exception as e:
         error_msg = str(e)
         logger.error(f"Upload process failed: {error_msg}")
-        
+
         # Log failure in database
         try:
             await database.execute(
@@ -314,12 +361,12 @@ async def upload_summary(
                     filename=filename,
                     uploader=uploader,
                     status="failed",
-                    error_message=error_msg
+                    error_message=error_msg,
                 )
             )
         except Exception as db_err:
             logger.error(f"Failed to write upload failure log to DB: {db_err}")
-            
+
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=error_msg)
@@ -327,9 +374,7 @@ async def upload_summary(
 
 @app.patch("/newsletters/{newsletter_id}")
 async def update_newsletter(
-    newsletter_id: int,
-    data: Dict[str, Any],
-    _: None = Depends(verify_api_key)
+    newsletter_id: int, data: Dict[str, Any], _: None = Depends(verify_api_key)
 ) -> JSONResponse:
     """
     Updates the metadata of a newsletter (e.g., schedule_date, target_sunday, tags, title, summary).
@@ -337,32 +382,54 @@ async def update_newsletter(
     logger.info(f"Updating newsletter {newsletter_id} with data: {data}")
     try:
         # Filter allowed fields for newsletters table
-        allowed_fields = ["schedule_date", "target_sunday", "tags", "delivered", "status"]
+        allowed_fields = [
+            "schedule_date",
+            "target_sunday",
+            "tags",
+            "delivered",
+            "status",
+        ]
         update_data = {k: v for k, v in data.items() if k in allowed_fields}
-        
+
         # Parse dates if they are passed as strings
-        if "schedule_date" in update_data and isinstance(update_data["schedule_date"], str):
+        if "schedule_date" in update_data and isinstance(
+            update_data["schedule_date"], str
+        ):
             try:
-                update_data["schedule_date"] = datetime.strptime(update_data["schedule_date"].split('T')[0], "%Y-%m-%d").date()
+                update_data["schedule_date"] = datetime.strptime(
+                    update_data["schedule_date"].split("T")[0], "%Y-%m-%d"
+                ).date()
             except ValueError:
                 pass
-        if "target_sunday" in update_data and isinstance(update_data["target_sunday"], str):
+        if "target_sunday" in update_data and isinstance(
+            update_data["target_sunday"], str
+        ):
             try:
-                update_data["target_sunday"] = datetime.strptime(update_data["target_sunday"].split('T')[0], "%Y-%m-%d").date()
+                update_data["target_sunday"] = datetime.strptime(
+                    update_data["target_sunday"].split("T")[0], "%Y-%m-%d"
+                ).date()
             except ValueError:
                 pass
 
         if update_data:
-            query = newsletters.update().where(newsletters.c.id == newsletter_id).values(**update_data)
+            query = (
+                newsletters.update()
+                .where(newsletters.c.id == newsletter_id)
+                .values(**update_data)
+            )
             await database.execute(query)
 
         # Filter and update summary fields
         summary_fields = ["title", "summary"]
         summary_data = {k: v for k, v in data.items() if k in summary_fields}
         if summary_data:
-            query = summaries.update().where(summaries.c.newsletter_id == newsletter_id).values(**summary_data)
+            query = (
+                summaries.update()
+                .where(summaries.c.newsletter_id == newsletter_id)
+                .values(**summary_data)
+            )
             await database.execute(query)
-        
+
         return JSONResponse(content={"message": "Newsletter updated successfully"})
     except Exception as e:
         logger.error(f"Error updating newsletter: {e}")
@@ -376,18 +443,22 @@ async def get_newsletter_thumbnail(newsletter_id: int):
     """
     try:
         # Fetch the thumbnail key/id from the database
-        query = select(newsletters.c.thumbnail_drive_id).where(newsletters.c.id == newsletter_id)
+        query = select(newsletters.c.thumbnail_drive_id).where(
+            newsletters.c.id == newsletter_id
+        )
         row = await database.fetch_one(query)
         if not row or not row["thumbnail_drive_id"]:
             raise HTTPException(status_code=404, detail="Thumbnail not found")
-            
+
         thumbnail_id = row["thumbnail_drive_id"]
-        
+
         # Download file bytes
         content = download_from_drive(thumbnail_id)
         if not content:
-            raise HTTPException(status_code=404, detail="Failed to retrieve thumbnail data")
-            
+            raise HTTPException(
+                status_code=404, detail="Failed to retrieve thumbnail data"
+            )
+
         return StreamingResponse(io.BytesIO(content), media_type="image/png")
     except HTTPException:
         raise
@@ -403,35 +474,35 @@ async def download_newsletter_file(newsletter_id: int):
     """
     try:
         # Fetch the file name and drive_file_id from the database
-        query = select(newsletters.c.filename, newsletters.c.drive_file_id).where(newsletters.c.id == newsletter_id)
+        query = select(newsletters.c.filename, newsletters.c.drive_file_id).where(
+            newsletters.c.id == newsletter_id
+        )
         row = await database.fetch_one(query)
         if not row or not row["drive_file_id"]:
             raise HTTPException(status_code=404, detail="Newsletter file not found")
-            
+
         file_id = row["drive_file_id"]
         filename = row["filename"] or f"newsletter_{newsletter_id}.pdf"
-        
+
         # Download file bytes
         content = download_from_drive(file_id)
         if not content:
             raise HTTPException(status_code=404, detail="Failed to retrieve file data")
-            
+
         # On-the-fly rename from SALLTO-Newsletter to Trinity-Newsletter for downloads
         download_filename = filename
         if "-SALLTO-Newsletter" in filename:
-            download_filename = filename.replace("-SALLTO-Newsletter", "-Trinity-Newsletter")
-            
-        headers = {
-            'Content-Disposition': f'attachment; filename="{download_filename}"'
-        }
+            download_filename = filename.replace(
+                "-SALLTO-Newsletter", "-Trinity-Newsletter"
+            )
+
+        headers = {"Content-Disposition": f'attachment; filename="{download_filename}"'}
         return Response(content=content, media_type="application/pdf", headers=headers)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error downloading newsletter: {e}")
         raise HTTPException(status_code=500, detail="Error downloading newsletter")
-
-
 
 
 @app.get("/newsletters")
@@ -454,24 +525,31 @@ async def get_newsletters() -> JSONResponse:
 
         result = []
         for row in rows:
-            result.append({
-                "id": row["id"],
-                "filename": row["filename"],
-                "drive_link": row["drive_web_view_link"],
-                "thumbnail_id": row["thumbnail_drive_id"],
-                "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
-                "status": row["status"],
-                "target_sunday": row["target_sunday"].isoformat() if row["target_sunday"] else None,
-                "tags": row["tags"],
-                "title": row["title"],
-                "summary": row["summary"]
-            })
+            result.append(
+                {
+                    "id": row["id"],
+                    "filename": row["filename"],
+                    "drive_link": row["drive_web_view_link"],
+                    "thumbnail_id": row["thumbnail_drive_id"],
+                    "uploaded_at": (
+                        row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+                    ),
+                    "status": row["status"],
+                    "target_sunday": (
+                        row["target_sunday"].isoformat()
+                        if row["target_sunday"]
+                        else None
+                    ),
+                    "tags": row["tags"],
+                    "title": row["title"],
+                    "summary": row["summary"],
+                }
+            )
 
         return JSONResponse(content={"newsletters": result})
     except Exception as e:
         logger.error(f"Error fetching newsletters: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching newsletters: {e}")
-
 
 
 @app.get("/newsletters/{newsletter_id}/approve")
@@ -482,27 +560,44 @@ async def approve_newsletter_summary(newsletter_id: int, request: Request):
     logger.info(f"Approving newsletter {newsletter_id}")
     try:
         # Update status to 'scheduled' and ensure schedule_date is set (defaults to Sunday 8:00 AM)
-        query = newsletters.update().where(newsletters.c.id == newsletter_id).values(
-            status="scheduled",
-            delivered=False
+        query = (
+            newsletters.update()
+            .where(newsletters.c.id == newsletter_id)
+            .values(status="scheduled", delivered=False)
         )
         await database.execute(query)
-        
+
         # Fetch details to display
-        fetch_query = select(newsletters.c.filename, newsletters.c.target_sunday).where(newsletters.c.id == newsletter_id)
+        fetch_query = select(newsletters.c.filename, newsletters.c.target_sunday).where(
+            newsletters.c.id == newsletter_id
+        )
         row = await database.fetch_one(fetch_query)
-        
+
         filename = row["filename"] if row else "Unknown File"
         target_sunday = row["target_sunday"] if row else "Unknown Date"
-        
+
         # Check if caller wants JSON
         accept_header = request.headers.get("accept", "")
-        if "application/json" in accept_header or request.query_params.get("format") == "json":
-            return JSONResponse(content={"message": "Approved successfully", "newsletter_id": newsletter_id, "filename": filename, "target_sunday": str(target_sunday)})
+        if (
+            "application/json" in accept_header
+            or request.query_params.get("format") == "json"
+        ):
+            return JSONResponse(
+                content={
+                    "message": "Approved successfully",
+                    "newsletter_id": newsletter_id,
+                    "filename": filename,
+                    "target_sunday": str(target_sunday),
+                }
+            )
 
         # Determine redirect URL from settings (CORS origins)
-        redirect_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
-        
+        redirect_url = (
+            settings.cors_origins[0]
+            if settings.cors_origins
+            else "http://localhost:3000"
+        )
+
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -542,14 +637,18 @@ async def get_upload_logs(_: None = Depends(verify_api_key)) -> JSONResponse:
         results = await database.fetch_all(query)
         logs_list = []
         for r in results:
-            logs_list.append({
-                "id": r["id"],
-                "filename": r["filename"],
-                "uploader": r["uploader"],
-                "status": r["status"],
-                "error_message": r["error_message"],
-                "created_at": r["created_at"].isoformat() if r["created_at"] else None
-            })
+            logs_list.append(
+                {
+                    "id": r["id"],
+                    "filename": r["filename"],
+                    "uploader": r["uploader"],
+                    "status": r["status"],
+                    "error_message": r["error_message"],
+                    "created_at": (
+                        r["created_at"].isoformat() if r["created_at"] else None
+                    ),
+                }
+            )
         return JSONResponse(content={"upload_logs": logs_list})
     except Exception as e:
         logger.error(f"Error fetching upload logs: {e}")
@@ -568,45 +667,66 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
         newsletter = await database.fetch_one(query)
         if not newsletter:
             raise HTTPException(status_code=404, detail="Newsletter not found")
-            
+
         # 2. Download original file
         file_id = newsletter["drive_file_id"]
         filename = newsletter["filename"]
         content = download_from_drive(file_id)
         if not content:
-            raise HTTPException(status_code=500, detail="Failed to retrieve newsletter file from storage")
-            
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to retrieve newsletter file from storage",
+            )
+
         # 3. Extract text
         file_type = "pdf" if filename.lower().endswith(".pdf") else "docx"
         text = extract_text_from_file(io.BytesIO(content), file_type=file_type)
-        
+
         # 4. Summarize again
         summary_data = choose_llm_and_summarize(text)
-        
+
         # 5. Update summaries database
-        update_query = summaries.update().where(summaries.c.newsletter_id == newsletter_id).values(
-            title=summary_data["title"],
-            summary=summary_data["summary"]
+        update_query = (
+            summaries.update()
+            .where(summaries.c.newsletter_id == newsletter_id)
+            .values(title=summary_data["title"], summary=summary_data["summary"])
         )
         await database.execute(update_query)
-        
+
         # 6. Notify agent of the regenerated review request
-        await notify_agent("review_request", {
-            "newsletter_id": newsletter_id,
-            "title": summary_data["title"],
-            "summary": summary_data["summary"],
-            "target_sunday": newsletter["target_sunday"],
-            "status": newsletter["status"]
-        })
-        
+        await notify_agent(
+            "review_request",
+            {
+                "newsletter_id": newsletter_id,
+                "title": summary_data["title"],
+                "summary": summary_data["summary"],
+                "target_sunday": newsletter["target_sunday"],
+                "status": newsletter["status"],
+            },
+        )
+
         # Check if caller wants JSON
         accept_header = request.headers.get("accept", "")
-        if "application/json" in accept_header or request.query_params.get("format") == "json":
-            return JSONResponse(content={"message": "Summary regenerated successfully", "newsletter_id": newsletter_id, "title": summary_data["title"], "summary": summary_data["summary"]})
+        if (
+            "application/json" in accept_header
+            or request.query_params.get("format") == "json"
+        ):
+            return JSONResponse(
+                content={
+                    "message": "Summary regenerated successfully",
+                    "newsletter_id": newsletter_id,
+                    "title": summary_data["title"],
+                    "summary": summary_data["summary"],
+                }
+            )
 
         # Determine redirect URL from settings (CORS origins)
-        redirect_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
-        
+        redirect_url = (
+            settings.cors_origins[0]
+            if settings.cors_origins
+            else "http://localhost:3000"
+        )
+
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -637,9 +757,9 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
 
 class SubscriberRequest(BaseModel):
     email: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    phone: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
+    phone: str | None = None
 
 
 class BatchSubscribersRequest(BaseModel):
@@ -670,24 +790,30 @@ async def get_all_subscribers():
             else:
                 inactive_count += 1
 
-            result.append({
-                "id": r["id"],
-                "email": r["email"],
-                "first_name": r["first_name"],
-                "last_name": r["last_name"],
-                "phone": r["phone"],
-                "is_active": is_act,
-                "created_at": r["created_at"].isoformat() if r["created_at"] else None
-            })
+            result.append(
+                {
+                    "id": r["id"],
+                    "email": r["email"],
+                    "first_name": r["first_name"],
+                    "last_name": r["last_name"],
+                    "phone": r["phone"],
+                    "is_active": is_act,
+                    "created_at": (
+                        r["created_at"].isoformat() if r["created_at"] else None
+                    ),
+                }
+            )
 
-        return JSONResponse(content={
-            "subscribers": result,
-            "stats": {
-                "total": len(result),
-                "active": active_count,
-                "inactive": inactive_count
+        return JSONResponse(
+            content={
+                "subscribers": result,
+                "stats": {
+                    "total": len(result),
+                    "active": active_count,
+                    "inactive": inactive_count,
+                },
             }
-        })
+        )
     except Exception as e:
         logger.error(f"Error fetching subscribers: {e}")
         raise HTTPException(status_code=500, detail="Error fetching subscribers")
@@ -709,17 +835,26 @@ async def subscribe_user(data: SubscriberRequest):
 
         if existing:
             if existing["is_active"]:
-                return JSONResponse(content={"message": "You are already subscribed!"}, status_code=200)
+                return JSONResponse(
+                    content={"message": "You are already subscribed!"}, status_code=200
+                )
             else:
                 # Reactivate subscription
-                update_query = subscribers.update().where(subscribers.c.email == email).values(
-                    is_active=True,
-                    first_name=data.first_name or existing["first_name"],
-                    last_name=data.last_name or existing["last_name"],
-                    phone=data.phone or existing["phone"]
+                update_query = (
+                    subscribers.update()
+                    .where(subscribers.c.email == email)
+                    .values(
+                        is_active=True,
+                        first_name=data.first_name or existing["first_name"],
+                        last_name=data.last_name or existing["last_name"],
+                        phone=data.phone or existing["phone"],
+                    )
                 )
                 await database.execute(update_query)
-                return JSONResponse(content={"message": "Subscription reactivated successfully!"}, status_code=200)
+                return JSONResponse(
+                    content={"message": "Subscription reactivated successfully!"},
+                    status_code=200,
+                )
 
         # Create new subscriber
         insert_query = subscribers.insert().values(
@@ -727,10 +862,13 @@ async def subscribe_user(data: SubscriberRequest):
             first_name=data.first_name,
             last_name=data.last_name,
             phone=data.phone,
-            is_active=True
+            is_active=True,
         )
         await database.execute(insert_query)
-        return JSONResponse(content={"message": "Successfully subscribed to the parish newsletter!"}, status_code=201)
+        return JSONResponse(
+            content={"message": "Successfully subscribed to the parish newsletter!"},
+            status_code=201,
+        )
     except Exception as e:
         logger.error(f"Error subscribing email: {e}")
         raise HTTPException(status_code=500, detail="Error subscribing email")
@@ -760,7 +898,11 @@ async def batch_subscribe_users(data: BatchSubscribersRequest):
 
             if existing:
                 if not existing["is_active"]:
-                    update_query = subscribers.update().where(subscribers.c.email == email).values(is_active=True)
+                    update_query = (
+                        subscribers.update()
+                        .where(subscribers.c.email == email)
+                        .values(is_active=True)
+                    )
                     await database.execute(update_query)
                     reactivated_count += 1
                 else:
@@ -773,12 +915,15 @@ async def batch_subscribe_users(data: BatchSubscribersRequest):
             logger.error(f"Error importing email {email}: {e}")
             skipped_count += 1
 
-    return JSONResponse(content={
-        "message": f"Import completed: {added_count} added, {reactivated_count} reactivated, {skipped_count} skipped/duplicates.",
-        "added": added_count,
-        "reactivated": reactivated_count,
-        "skipped": skipped_count
-    }, status_code=200)
+    return JSONResponse(
+        content={
+            "message": f"Import completed: {added_count} added, {reactivated_count} reactivated, {skipped_count} skipped/duplicates.",
+            "added": added_count,
+            "reactivated": reactivated_count,
+            "skipped": skipped_count,
+        },
+        status_code=200,
+    )
 
 
 @app.patch("/subscribers/{subscriber_id}")
@@ -792,9 +937,15 @@ async def update_subscriber(subscriber_id: int, data: UpdateSubscriberRequest):
         if not existing:
             raise HTTPException(status_code=404, detail="Subscriber not found")
 
-        update_query = subscribers.update().where(subscribers.c.id == subscriber_id).values(is_active=data.is_active)
+        update_query = (
+            subscribers.update()
+            .where(subscribers.c.id == subscriber_id)
+            .values(is_active=data.is_active)
+        )
         await database.execute(update_query)
-        return JSONResponse(content={"message": "Subscriber status updated successfully"})
+        return JSONResponse(
+            content={"message": "Subscriber status updated successfully"}
+        )
     except Exception as e:
         logger.error(f"Error updating subscriber {subscriber_id}: {e}")
         raise HTTPException(status_code=500, detail="Error updating subscriber")
@@ -830,15 +981,22 @@ async def unsubscribe_user(data: SubscriberRequest):
         existing = await database.fetch_one(query)
 
         if not existing or not existing["is_active"]:
-            return JSONResponse(content={"message": "Email is not subscribed."}, status_code=200)
+            return JSONResponse(
+                content={"message": "Email is not subscribed."}, status_code=200
+            )
 
-        update_query = subscribers.update().where(subscribers.c.email == email).values(is_active=False)
+        update_query = (
+            subscribers.update()
+            .where(subscribers.c.email == email)
+            .values(is_active=False)
+        )
         await database.execute(update_query)
-        return JSONResponse(content={"message": "You have been successfully unsubscribed."})
+        return JSONResponse(
+            content={"message": "You have been successfully unsubscribed."}
+        )
     except Exception as e:
         logger.error(f"Error unsubscribing email: {e}")
         raise HTTPException(status_code=500, detail="Error unsubscribing email")
-
 
 
 @app.get("/notifications/poll")
@@ -848,21 +1006,26 @@ async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONRes
     Deletes notifications from the database after returning them.
     """
     from db.models import agent_notifications
-    try:
-        # Delete and return notifications atomically in a single query
-        delete_query = agent_notifications.delete().returning(
-            agent_notifications.c.payload,
-            agent_notifications.c.created_at
-        )
-        rows = await database.fetch_all(delete_query)
 
-        # Sort rows in-memory by created_at asc to guarantee chronological order
-        sorted_rows = sorted(rows, key=lambda r: r["created_at"]) if rows else []
-        
+    try:
+        # 1. Fetch all pending notifications
+        query = select(agent_notifications).order_by(
+            agent_notifications.c.created_at.asc()
+        )
+        rows = await database.fetch_all(query)
+
         result = []
         for row in sorted_rows:
             result.append(json.loads(row["payload"]))
-            
+
+        # 2. Delete the fetched notifications
+        if rows:
+            ids = [row["id"] for row in rows]
+            delete_query = agent_notifications.delete().where(
+                agent_notifications.c.id.in_(ids)
+            )
+            await database.execute(delete_query)
+
         return JSONResponse(content={"notifications": result})
     except Exception as e:
         logger.error(f"Error polling agent notifications: {e}")
@@ -870,11 +1033,14 @@ async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONRes
 
 
 @app.post("/deliver")
-async def trigger_newsletter_delivery(_: None = Depends(verify_api_key)) -> JSONResponse:
+async def trigger_newsletter_delivery(
+    _: None = Depends(verify_api_key),
+) -> JSONResponse:
     """
     Triggers the delivery worker process manually (or via cloud cron).
     """
     from scripts.delivery_worker import check_and_deliver
+
     logger.info("Manual delivery trigger initiated via API")
     try:
         # Run delivery worker check_and_deliver logic asynchronously
