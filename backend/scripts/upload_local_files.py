@@ -43,14 +43,21 @@ async def process_local_files():
         files = list(input_folder.glob("*.pdf")) + list(input_folder.glob("*.docx"))
         logger.info(f"Found {len(files)} files to process.")
 
+        # Batch-fetch existing filenames from DB to avoid N+1 queries
+        existing_filenames = set()
+        if files:
+            local_sanitized_filenames = {sanitize_filename(f.name) for f in files}
+            query = newsletters.select().where(newsletters.c.filename.in_(local_sanitized_filenames))
+            existing_rows = await database.fetch_all(query)
+            existing_filenames = {row["filename"] for row in existing_rows}
+
         for file_path in files:
             filename = file_path.name
+            sanitized_name = sanitize_filename(filename)
             mime_type = "application/pdf" if file_path.suffix.lower() == ".pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
             # Check if already in DB
-            query = newsletters.select().where(newsletters.c.filename == sanitize_filename(filename))
-            existing = await database.fetch_one(query)
-            if existing:
+            if sanitized_name in existing_filenames:
                 logger.info(f"Skipping already processed file: {filename}")
                 continue
 
@@ -62,7 +69,7 @@ async def process_local_files():
                     content = f.read()
 
                 # Standardize Filename
-                new_filename = sanitize_filename(filename)
+                new_filename = sanitized_name
                 
                 # Compress if PDF
                 final_content = content
