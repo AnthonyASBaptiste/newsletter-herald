@@ -1,4 +1,5 @@
 import logging
+import secrets
 from fastapi import Request, HTTPException
 from config import get_settings
 
@@ -23,9 +24,9 @@ def verify_api_key(request: Request):
     
     verified = False
     
-    if auth_header and auth_header == f"Bearer {settings.api_key}":
+    if auth_header and secrets.compare_digest(auth_header, f"Bearer {settings.api_key}"):
         verified = True
-    elif x_api_key and x_api_key == settings.api_key:
+    elif x_api_key and secrets.compare_digest(x_api_key, settings.api_key):
         verified = True
         
     if not verified:
