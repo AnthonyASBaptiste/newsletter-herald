@@ -1,5 +1,9 @@
 GEMINI.md
 newsletters_to_upload/* 
+node_modules/
+backend/venv/
+.env
+.env*.local
 
 # Python cache / bytecode
 **/__pycache__/
@@ -7,3 +11,4 @@ newsletters_to_upload/*
 **/*.pyo
 **/*.pyd
 GRAPH.md
+
