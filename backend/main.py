@@ -12,6 +12,7 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from starlette.concurrency import run_in_threadpool
 
 from helpers.key_utils import verify_api_key
 from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
@@ -32,6 +33,25 @@ settings = get_settings()
 
 # Create a logger for this module
 logger = logging.getLogger(__name__)
+
+
+def sync_extract_text(contents: bytes, content_type: str) -> str:
+    """
+    Synchronously extracts text from the document bytes.
+    This function should be run in a threadpool to prevent blocking the async event loop.
+    """
+    if content_type == "application/pdf":
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file_path = temp_file.name
+            temp_file.write(contents)
+
+        try:
+            return extract_text_from_file(temp_file_path, file_type="pdf")
+        finally:
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+    else:
+        return extract_text_from_file(io.BytesIO(contents), file_type="docx")
 
 
 @asynccontextmanager
@@ -119,22 +139,9 @@ async def upload_summary(
         # Read file contents
         contents = await file.read()
         
-        # Extract text from file
+        # Extract text from file asynchronously on threadpool to avoid blocking event loop
         try:
-            if file.content_type == "application/pdf":
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                    temp_file_path = temp_file.name
-                    temp_file.write(contents)
-                
-                try:
-                    text = extract_text_from_file(temp_file_path, file_type="pdf")
-                finally:
-                    if os.path.exists(temp_file_path):
-                        os.unlink(temp_file_path)
-            else:
-                file.file.seek(0)
-                text = extract_text_from_file(file.file, file_type="docx")
-                
+            text = await run_in_threadpool(sync_extract_text, contents, file.content_type)
             logger.debug(f"Text extracted successfully from {file.filename}")
         except Exception as e:
             logger.error(f"Error extracting text from file: {str(e)}")
