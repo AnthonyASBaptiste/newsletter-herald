@@ -12,7 +12,7 @@ sys.path.append(backend_dir)
 from config import get_settings
 from db.setup import database
 from db.models import newsletters, summaries, model_usage, upload_logs
-from helpers.storage import upload_to_drive, make_file_public
+from helpers.storage import upload_to_drive
 from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
 from helpers.validation import validate_newsletter_date
 from llm.providers import choose_llm_and_summarize
