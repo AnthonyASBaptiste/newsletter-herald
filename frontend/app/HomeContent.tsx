@@ -25,7 +25,9 @@ import {
   TableHead,
   TableRow,
   Card,
-  CardContent
+  CardContent,
+  TextField,
+  Divider
 } from '@mui/material';
 import ArticleIcon from '@mui/icons-material/Article';
 import CloseIcon from '@mui/icons-material/Close';
@@ -38,6 +40,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import PeopleIcon from '@mui/icons-material/People';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import EditIcon from '@mui/icons-material/Edit';
 import { useUser, useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 import { useSearchParams } from 'next/navigation';
@@ -53,6 +56,7 @@ interface Newsletter {
   status: string;
   tags?: string;
   thumbnail_id?: string;
+  scheduled_at?: string;
 }
 
 interface SummaryResponse {
@@ -96,6 +100,14 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   // Upload Modal State
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+
+  // Edit Schedule Modal State
+  const [editScheduledOpen, setEditScheduledOpen] = useState(false);
+  const [editScheduledTitle, setEditScheduledTitle] = useState("");
+  const [editScheduledSummary, setEditScheduledSummary] = useState("");
+  const [editScheduledDate, setEditScheduledDate] = useState("");
+  const [editScheduledTime, setEditScheduledTime] = useState("");
+  const [editScheduledSaving, setEditScheduledSaving] = useState(false);
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
 
@@ -291,6 +303,78 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       }
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleOpenEditScheduled = (newsletter: Newsletter) => {
+    setEditScheduledTitle(newsletter.title || "");
+    setEditScheduledSummary(newsletter.summary || "");
+    
+    // Parse scheduled_at if set, otherwise default to target_sunday at 08:00
+    if (newsletter.scheduled_at) {
+      try {
+        const dt = new Date(newsletter.scheduled_at);
+        const year = dt.getFullYear();
+        const month = String(dt.getMonth() + 1).padStart(2, '0');
+        const date = String(dt.getDate()).padStart(2, '0');
+        const hours = String(dt.getHours()).padStart(2, '0');
+        const minutes = String(dt.getMinutes()).padStart(2, '0');
+        
+        setEditScheduledDate(`${year}-${month}-${date}`);
+        setEditScheduledTime(`${hours}:${minutes}`);
+      } catch (e) {
+        console.error("Failed to parse scheduled_at date", e);
+        setEditScheduledDate(newsletter.target_sunday || "");
+        setEditScheduledTime("08:00");
+      }
+    } else if (newsletter.target_sunday) {
+      setEditScheduledDate(newsletter.target_sunday);
+      setEditScheduledTime("08:00");
+    } else {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = String(today.getMonth() + 1).padStart(2, '0');
+      const date = String(today.getDate()).padStart(2, '0');
+      setEditScheduledDate(`${year}-${month}-${date}`);
+      setEditScheduledTime("08:00");
+    }
+    setEditScheduledOpen(true);
+  };
+
+  const handleSaveScheduledChanges = async (id: number) => {
+    if (!editScheduledDate || !editScheduledTime) {
+      alert("Please select both a date and a time for scheduling.");
+      return;
+    }
+    setEditScheduledSaving(true);
+    try {
+      const scheduledAtStr = `${editScheduledDate}T${editScheduledTime}:00`;
+      
+      const response = await fetch(`${backendUrl}/newsletters/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+        },
+        body: JSON.stringify({
+          title: editScheduledTitle,
+          summary: editScheduledSummary,
+          scheduled_at: scheduledAtStr,
+          target_sunday: editScheduledDate
+        }),
+      });
+      if (response.ok) {
+        alert("Newsletter schedule and content updated successfully!");
+        setEditScheduledOpen(false);
+        fetchNewsletters();
+      } else {
+        alert("Failed to save changes.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error saving changes.");
+    } finally {
+      setEditScheduledSaving(false);
     }
   };
 
@@ -573,7 +657,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
             {latestScheduled && (
               <Paper sx={{ p: 4, mb: 4, borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
                 <Typography variant="h6" fontWeight={700} sx={{ mb: 3, color: '#1d1d1f' }}>
-                  📅 Upcoming Scheduled Newsletter (Next Sunday Delivery)
+                  📅 Upcoming Scheduled Newsletter {latestScheduled.scheduled_at ? '(Custom Schedule)' : '(Sunday Morning Delivery)'}
                 </Typography>
                 
                 <Grid container spacing={4} alignItems="center">
@@ -590,8 +674,25 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                     </Grid>
                   )}
                   <Grid size={{ xs: 12, md: latestScheduled.thumbnail_id ? 8 : 12 }}>
-                    <Typography variant="caption" sx={{ color: '#0071e3', fontWeight: 700, textTransform: 'uppercase' }}>
-                      Scheduled Sunday: {latestScheduled.target_sunday ? new Date(latestScheduled.target_sunday).toLocaleDateString() : ''}
+                    <Typography variant="caption" sx={{ color: '#0071e3', fontWeight: 700, textTransform: 'uppercase', display: 'block', mb: 1 }}>
+                      {latestScheduled.scheduled_at ? (
+                        <>
+                          ⏱️ Scheduled For: {new Date(latestScheduled.scheduled_at).toLocaleString(undefined, {
+                            weekday: 'long',
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric',
+                            hour: 'numeric',
+                            minute: '2-digit'
+                          })}
+                        </>
+                      ) : (
+                        <>
+                          📅 Scheduled Sunday: {latestScheduled.target_sunday ? new Date(latestScheduled.target_sunday + 'T00:00:00Z').toLocaleDateString(undefined, { 
+                            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC'
+                          }) : ''} (Sunday morning)
+                        </>
+                      )}
                     </Typography>
                     <Typography variant="h5" fontWeight={700} sx={{ my: 1 }}>
                       {latestScheduled.title}
@@ -600,13 +701,21 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                       {latestScheduled.summary}
                     </Typography>
                     
-                    <Stack direction="row" spacing={2}>
+                    <Stack direction="row" spacing={2} useFlexGap flexWrap="wrap">
+                      <Button
+                        variant="contained"
+                        startIcon={<EditIcon />}
+                        onClick={() => handleOpenEditScheduled(latestScheduled)}
+                        sx={{ textTransform: 'none', borderRadius: 2, bgcolor: '#0071e3', px: 3 }}
+                      >
+                        Edit Schedule & Content
+                      </Button>
                       <Button 
                         variant="outlined" 
                         startIcon={<DownloadIcon />} 
                         href={`${backendUrl}/newsletters/${latestScheduled.id}/download`}
                         target="_blank"
-                        sx={{ textTransform: 'none', borderRadius: 2 }}
+                        sx={{ textTransform: 'none', borderRadius: 2, px: 3 }}
                       >
                         Download original
                       </Button>
@@ -614,7 +723,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                         variant="outlined"
                         color="error"
                         onClick={() => handleCancelSchedule(latestScheduled.id)}
-                        sx={{ textTransform: 'none', borderRadius: 2 }}
+                        sx={{ textTransform: 'none', borderRadius: 2, px: 3 }}
                       >
                         Cancel Scheduled Delivery
                       </Button>
@@ -919,6 +1028,134 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               </Button>
             </Link>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* 6. EDIT SCHEDULE & CONTENT DIALOG */}
+      <Dialog 
+        open={editScheduledOpen} 
+        onClose={() => setEditScheduledOpen(false)}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, p: 1 } }}
+      >
+        <DialogTitle sx={{ pr: 6, fontWeight: 700 }}>
+          📅 Edit Schedule & Email Content
+          <IconButton
+            onClick={() => setEditScheduledOpen(false)}
+            sx={{ position: 'absolute', right: 16, top: 16 }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={3}>
+            {/* Left Column: Form Inputs */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, color: '#1d1d1f' }}>
+                ✏️ Edit Details
+              </Typography>
+              <Stack spacing={3}>
+                <TextField
+                  label="Email Subject"
+                  fullWidth
+                  value={editScheduledTitle}
+                  onChange={(e) => setEditScheduledTitle(e.target.value)}
+                  variant="outlined"
+                  required
+                />
+                <TextField
+                  label="Email Body / Summary"
+                  fullWidth
+                  multiline
+                  rows={8}
+                  value={editScheduledSummary}
+                  onChange={(e) => setEditScheduledSummary(e.target.value)}
+                  variant="outlined"
+                  required
+                  helperText="Use newlines to separate paragraphs."
+                />
+                
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                    📅 Schedule Delivery Date
+                  </Typography>
+                  <TextField
+                    type="date"
+                    fullWidth
+                    value={editScheduledDate}
+                    onChange={(e) => setEditScheduledDate(e.target.value)}
+                    variant="outlined"
+                    required
+                  />
+                </Box>
+
+                <Box>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                    ⏱️ Schedule Delivery Time
+                  </Typography>
+                  <TextField
+                    type="time"
+                    fullWidth
+                    value={editScheduledTime}
+                    onChange={(e) => setEditScheduledTime(e.target.value)}
+                    variant="outlined"
+                    required
+                  />
+                </Box>
+              </Stack>
+            </Grid>
+
+            {/* Right Column: Live Email Preview */}
+            <Grid size={{ xs: 12, md: 6 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 2, color: '#1d1d1f' }}>
+                📧 Live Email Preview
+              </Typography>
+              <Box sx={{ 
+                border: '1px solid #e0e0e0', 
+                borderRadius: 2, 
+                p: 2, 
+                bgcolor: '#f5f5f7',
+                height: '100%',
+                maxHeight: 520,
+                overflowY: 'auto'
+              }}>
+                <Box sx={{ 
+                  bgcolor: 'white', 
+                  p: 3, 
+                  borderRadius: 2,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+                  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                  lineHeight: 1.6,
+                  color: '#333'
+                }}>
+                  <Typography variant="h6" sx={{ color: '#0071e3', fontWeight: 700, mb: 2, borderBottom: '1px solid #eee', pb: 1, fontSize: '1.1rem' }}>
+                    {editScheduledTitle || '(No Subject)'}
+                  </Typography>
+                  <Box sx={{ fontSize: '14px', whiteSpace: 'pre-line', mb: 3 }}>
+                    {editScheduledSummary || '(No Content)'}
+                  </Box>
+                  <Divider sx={{ my: 3 }} />
+                  <Typography variant="caption" sx={{ color: '#86868b', display: 'block', fontSize: '11px' }}>
+                    Sent by Newsletter Herald. To unsubscribe, please visit the parish website.
+                  </Typography>
+                </Box>
+              </Box>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: 3 }}>
+          <Button onClick={() => setEditScheduledOpen(false)} variant="outlined" sx={{ borderRadius: '100px', px: 4 }}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={() => latestScheduled && handleSaveScheduledChanges(latestScheduled.id)} 
+            variant="contained" 
+            disabled={editScheduledSaving || !editScheduledTitle || !editScheduledSummary || !editScheduledDate || !editScheduledTime}
+            sx={{ borderRadius: '100px', px: 4, bgcolor: '#0071e3' }}
+          >
+            {editScheduledSaving ? <CircularProgress size={24} color="inherit" /> : 'Save Changes'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

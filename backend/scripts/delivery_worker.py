@@ -7,7 +7,7 @@ import os
 # Add backend directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 from db.setup import database
 from db.models import newsletters, summaries, subscribers, delivery_logs
 from helpers.email import send_newsletter_email
@@ -21,17 +21,18 @@ settings = get_settings()
 
 async def check_and_deliver():
     """
-    Checks the database for newsletters scheduled for today that haven't been delivered,
+    Checks the database for newsletters scheduled for today or custom date/time,
     and sends them to all active subscribers.
     """
     try:
         await database.connect()
         logger.info("Connected to database for delivery check")
 
+        now = datetime.datetime.now(datetime.timezone.utc)
         today = datetime.date.today()
-        logger.info(f"Checking for newsletters scheduled for: {today}")
+        logger.info(f"Checking for newsletters scheduled at/before: {now} (or target Sunday <= {today})")
 
-        # Fetch newsletters that are scheduled for today or earlier and not yet delivered
+        # Fetch newsletters that are scheduled and not yet delivered
         query = select(
             newsletters.c.id,
             summaries.c.title,
@@ -40,9 +41,12 @@ async def check_and_deliver():
             newsletters.join(summaries, newsletters.c.id == summaries.c.newsletter_id)
         ).where(
             and_(
-                newsletters.c.target_sunday <= today,
                 newsletters.c.status == "scheduled",
-                newsletters.c.delivered == False
+                newsletters.c.delivered == False,
+                or_(
+                    and_(newsletters.c.scheduled_at != None, newsletters.c.scheduled_at <= now),
+                    and_(newsletters.c.scheduled_at == None, newsletters.c.target_sunday <= today)
+                )
             )
         )
 

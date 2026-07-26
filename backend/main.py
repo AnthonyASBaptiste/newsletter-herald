@@ -382,13 +382,7 @@ async def update_newsletter(
     logger.info(f"Updating newsletter {newsletter_id} with data: {data}")
     try:
         # Filter allowed fields for newsletters table
-        allowed_fields = [
-            "schedule_date",
-            "target_sunday",
-            "tags",
-            "delivered",
-            "status",
-        ]
+        allowed_fields = ["schedule_date", "target_sunday", "tags", "delivered", "status", "scheduled_at"]
         update_data = {k: v for k, v in data.items() if k in allowed_fields}
 
         # Parse dates if they are passed as strings
@@ -410,6 +404,25 @@ async def update_newsletter(
                 ).date()
             except ValueError:
                 pass
+        if "scheduled_at" in update_data and isinstance(update_data["scheduled_at"], str):
+            val = update_data["scheduled_at"]
+            if val.endswith('Z'):
+                val = val[:-1] + '+00:00'
+            try:
+                update_data["scheduled_at"] = datetime.fromisoformat(val)
+            except ValueError:
+                # Fallback to alternate formats
+                parsed = False
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                    try:
+                        update_data["scheduled_at"] = datetime.strptime(val, fmt)
+                        parsed = True
+                        break
+                    except ValueError:
+                        pass
+                if not parsed:
+                    # If we cannot parse it, remove it or set it to None to avoid database error
+                    update_data.pop("scheduled_at", None)
 
         if update_data:
             query = (
@@ -515,7 +528,7 @@ async def get_newsletters() -> JSONResponse:
         query = """
             SELECT 
                 n.id, n.filename, n.drive_web_view_link, n.thumbnail_drive_id, n.uploaded_at,
-                n.status, n.target_sunday, n.tags,
+                n.status, n.target_sunday, n.tags, n.scheduled_at,
                 s.title, s.summary
             FROM newsletters n
             LEFT JOIN summaries s ON n.id = s.newsletter_id
@@ -525,26 +538,19 @@ async def get_newsletters() -> JSONResponse:
 
         result = []
         for row in rows:
-            result.append(
-                {
-                    "id": row["id"],
-                    "filename": row["filename"],
-                    "drive_link": row["drive_web_view_link"],
-                    "thumbnail_id": row["thumbnail_drive_id"],
-                    "uploaded_at": (
-                        row["uploaded_at"].isoformat() if row["uploaded_at"] else None
-                    ),
-                    "status": row["status"],
-                    "target_sunday": (
-                        row["target_sunday"].isoformat()
-                        if row["target_sunday"]
-                        else None
-                    ),
-                    "tags": row["tags"],
-                    "title": row["title"],
-                    "summary": row["summary"],
-                }
-            )
+            result.append({
+                "id": row["id"],
+                "filename": row["filename"],
+                "drive_link": row["drive_web_view_link"],
+                "thumbnail_id": row["thumbnail_drive_id"],
+                "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
+                "status": row["status"],
+                "target_sunday": row["target_sunday"].isoformat() if row["target_sunday"] else None,
+                "tags": row["tags"],
+                "scheduled_at": row["scheduled_at"].isoformat() if row["scheduled_at"] else None,
+                "title": row["title"],
+                "summary": row["summary"]
+            })
 
         return JSONResponse(content={"newsletters": result})
     except Exception as e:
