@@ -1,6 +1,6 @@
 import requests
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from config import get_settings
 
 # Get settings from centralized configuration
