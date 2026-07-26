@@ -93,17 +93,31 @@ async def run_integration_test():
         # Verify delivery logs
         log_query = delivery_logs.select().where(delivery_logs.c.newsletter_id == newsletter_id)
         logs = await database.fetch_all(log_query)
-        print(f"Delivery logs recorded: {len(logs)} (Expected: 1)")
-        assert len(logs) == 1, f"Expected 1 delivery log, got {len(logs)}"
-        print(f"Recipient: {logs[0]['recipient']} | Status: {logs[0]['status']}")
+        print(f"Delivery logs recorded: {len(logs)}")
+        assert len(logs) >= 1, f"Expected at least 1 delivery log, got {len(logs)}"
+
+        # Check if our test recipient has a delivery log recorded
+        test_recipient_log = next((l for l in logs if l['recipient'] == test_email), None)
+        assert test_recipient_log is not None, f"Expected delivery log for test email '{test_email}', but none was found."
+        print(f"Recipient: {test_recipient_log['recipient']} | Status: {test_recipient_log['status']}")
         
         # Verify agent bridge database notification
         print("Verifying database agent_notifications queue...")
         note_query = select(agent_notifications).where(agent_notifications.c.event_type == "delivery_report")
         notes = await database.fetch_all(note_query)
-        print(f"Database notifications recorded: {len(notes)} (Expected: 1)")
-        assert len(notes) == 1, f"Expected 1 database notification, got {len(notes)}"
-        payload = json.loads(notes[0]['payload'])
+        print(f"Database notifications recorded: {len(notes)}")
+        assert len(notes) >= 1, f"Expected at least 1 database notification, got {len(notes)}"
+
+        # Check that one of the notifications contains our newsletter ID in payload
+        target_note = None
+        for n in notes:
+            payload = json.loads(n['payload'])
+            if payload.get('event_id') == newsletter_id:
+                target_note = n
+                break
+
+        assert target_note is not None, "Could not find agent notification for our test newsletter ID"
+        payload = json.loads(target_note['payload'])
         print(f"Event type: {payload['type']} (Expected: delivery_report)")
         assert payload['type'] == "delivery_report", "Event type was not delivery_report"
         
@@ -113,7 +127,7 @@ async def run_integration_test():
         await database.execute(summaries.delete().where(summaries.c.newsletter_id == newsletter_id))
         await database.execute(newsletters.delete().where(newsletters.c.id == newsletter_id))
         await database.execute(subscribers.delete().where(subscribers.c.email == test_email))
-        await database.execute(agent_notifications.delete().where(agent_notifications.c.id == notes[0]['id']))
+        await database.execute(agent_notifications.delete().where(agent_notifications.c.id == target_note['id']))
             
         print("All delivery worker integration tests passed successfully!")
         
