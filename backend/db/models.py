@@ -20,6 +20,7 @@ newsletters = Table(
     Column("delivered", Boolean, default=False),
     Column("status", String, default="draft"),
     Column("target_sunday", Date, nullable=True),
+    Column("scheduled_at", DateTime(timezone=True), nullable=True),
 )
 
 summaries = Table(
