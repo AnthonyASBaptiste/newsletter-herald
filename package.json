@@ -1,13 +1,20 @@
 {
   "name": "newsletter-herald",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Roman Catholic church newsletter summarization and delivery system",
   "scripts": {
     "dev:backend": "cd backend && .\\venv\\Scripts\\python -m uvicorn main:app --reload",
     "dev:frontend": "cd frontend && npm run dev",
-    "start": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\""
+    "start": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "install:all": "npm install",
+    "release": "standard-version",
+    "release:patch": "standard-version --release-as patch",
+    "release:minor": "standard-version --release-as minor",
+    "release:major": "standard-version --release-as major",
+    "release:revert": "git tag -d v$(node -p \"require('./package.json').version\") && git reset --hard HEAD~1"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "standard-version": "^9.5.0"
   }
 }
