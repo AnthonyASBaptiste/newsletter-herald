@@ -27,8 +27,26 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Herald - Church Newsletter Summaries",
-  description: "Summarize Roman Catholic church newsletters with ease.",
+  title: "Newsletter Herald — AI-Powered Catholic Church Bulletin Summaries",
+  description: "Newsletter Herald automatically parses Roman Catholic parish bulletins, extracts theological and calendar metadata, generates warm AI summaries, and schedules weekly email delivery to parishioners.",
+  keywords: ["Newsletter Herald", "Catholic Church Newsletter", "Parish Bulletin Summarizer", "Liturgical AI", "Anthony Baptiste"],
+  authors: [{ name: "Anthony Baptiste", url: "https://anthonybaptiste.dev" }],
+  creator: "Anthony Baptiste",
+  metadataBase: new URL("https://newsletter-herald.vercel.app"),
+  openGraph: {
+    title: "Newsletter Herald — AI-Powered Catholic Church Bulletin Summaries",
+    description: "Automated bulletin processing, theological summary generation, and parishioner email scheduling.",
+    url: "https://newsletter-herald.vercel.app",
+    siteName: "Newsletter Herald",
+    locale: "en_US",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Newsletter Herald",
+    description: "Automated parish bulletin summarization & weekly email dispatch.",
+    creator: "@anthonybaptiste",
+  },
   icons: {
     icon: [
       { url: '/favicon.ico' },
@@ -50,6 +68,32 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
+        <head>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                "@context": "https://schema.org",
+                "@type": "SoftwareApplication",
+                "name": "Newsletter Herald",
+                "applicationCategory": "BusinessApplication",
+                "operatingSystem": "Web",
+                "description": "Automated liturgical newsletter pipeline and Roman Catholic church bulletin summarization platform.",
+                "author": {
+                  "@type": "Person",
+                  "name": "Anthony Baptiste",
+                  "url": "https://anthonybaptiste.dev"
+                },
+                "creator": {
+                  "@type": "Person",
+                  "name": "Anthony Baptiste",
+                  "url": "https://anthonybaptiste.dev"
+                },
+                "url": "https://newsletter-herald.vercel.app"
+              })
+            }}
+          />
+        </head>
         <body
           className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         >
@@ -81,7 +125,16 @@ export default function RootLayout({
                 <Box component="footer" sx={{ py: 6, bgcolor: 'white', mt: 'auto', borderTop: '1px solid #e0e0e0' }}>
                   <Container maxWidth="lg">
                     <Typography variant="body2" color="text.secondary" align="center">
-                      © {new Date().getFullYear()} SALLTO Herald. Built with ❤️ for our community.
+                      © {new Date().getFullYear()} Newsletter Herald. Built with heart by{' '}
+                      <a 
+                        href="https://anthonybaptiste.dev" 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        style={{ color: '#0071e3', textDecoration: 'none', fontWeight: 600 }}
+                      >
+                        Anthony
+                      </a>{' '}
+                      for our community.
                     </Typography>
                   </Container>
                 </Box>

@@ -160,7 +160,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
             Access Denied
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
-            Your account (<strong>{userEmail}</strong>) is not authorized as an administrator for SALLTO Herald.
+            Your account (<strong>{userEmail}</strong>) is not authorized as an administrator for Newsletter Herald.
           </Typography>
           <Stack spacing={2} direction="row" justifyContent="center">
             <Button 
