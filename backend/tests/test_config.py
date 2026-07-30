@@ -16,7 +16,11 @@ class TestConfigCORS(unittest.TestCase):
         }
         with mock.patch.dict(os.environ, env_vars, clear=True):
             settings = Settings()
-            self.assertEqual(settings.cors_origins, [])
+            self.assertEqual(settings.cors_origins, [
+                "https://newsletter-herald.vercel.app",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ])
 
     def test_cors_origins_comma_separated(self):
         """Test that cors_origins parses a comma-separated string."""

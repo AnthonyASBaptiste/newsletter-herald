@@ -60,7 +60,11 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # CORS Configuration
-    cors_origins: list[str] | str = []
+    cors_origins: list[str] | str = [
+        "https://newsletter-herald.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
 
     @field_validator("cors_origins", mode="before")
     @classmethod
