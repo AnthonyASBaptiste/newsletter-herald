@@ -324,6 +324,7 @@ async def upload_summary(
                     demo_recipient = "admin@newsletterherald.com"
 
                 demo_subject = f"[DEMO/PREVIEW] {summary['title']}"
+                summary_formatted = summary['summary'].replace('\n', '<br>')
                 demo_html = f"""
                 <html>
                 <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
@@ -333,7 +334,7 @@ async def upload_summary(
                         </div>
                         <h2 style='color: #0071e3;'>{summary['title']}</h2>
                         <div style='font-size: 16px;'>
-                            {summary['summary'].replace('\\n', '<br>')}
+                            {summary_formatted}
                         </div>
                         <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
                         <p style='font-size: 12px; color: #86868b;'>This is an immediate demo simulation of the scheduled Sunday email dispatch. Target Sunday: {target_sunday}</p>
