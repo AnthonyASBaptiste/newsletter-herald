@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.2](https://github.com/AnthonyASBaptiste/newsletter-herald/compare/v0.1.1...v0.1.2) (2026-07-30)
+
+
+### Features
+
+* add advanced scheduling and email content editor for upcoming newsletters ([4100f6c](https://github.com/AnthonyASBaptiste/newsletter-herald/commit/4100f6cc249cbd33f0c686a177d7833c39d792ca))
+* implement Pydantic settings configuration and update .gitignore to exclude production environment files ([c32798a](https://github.com/AnthonyASBaptiste/newsletter-herald/commit/c32798a154db925a52b0383cc4660744832c4d9c))
+* implement pydantic-based configuration management with environment variable validation and add sample frontend environment variables ([bf76cc9](https://github.com/AnthonyASBaptiste/newsletter-herald/commit/bf76cc92b4dc4670660b72b14db3f959cbe05093))
+
 ### 0.1.1 (2026-07-26)
 
 
