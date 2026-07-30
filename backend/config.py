@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 import logging
 from typing import Optional
@@ -59,7 +60,28 @@ class Settings(BaseSettings):
     api_port: int = 8000
 
     # CORS Configuration
-    cors_origins: list[str] = ["https://newsletter-herald.vercel.app", "http://localhost:3000", "http://127.0.0.1:3000"]
+    cors_origins: list[str] | str = [
+        "https://newsletter-herald.vercel.app",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v: any) -> list[str]:
+        if isinstance(v, str):
+            if not v.strip():
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                import json
+                try:
+                    return json.loads(v)
+                except json.JSONDecodeError:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        if isinstance(v, list):
+            return [origin.strip() for origin in v if isinstance(origin, str) and origin.strip()]
+        return []
 
     class Config:
         env_file = ".env"
