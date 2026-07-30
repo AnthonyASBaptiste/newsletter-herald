@@ -125,7 +125,7 @@ export default function RootLayout({
                 <Box component="footer" sx={{ py: 6, bgcolor: 'white', mt: 'auto', borderTop: '1px solid #e0e0e0' }}>
                   <Container maxWidth="lg">
                     <Typography variant="body2" color="text.secondary" align="center">
-                      © {new Date().getFullYear()} Newsletter Herald. Built with heart by{' '}
+                      © {new Date().getFullYear()} Newsletter Herald. Built with ❤️ by{' '}
                       <a 
                         href="https://anthonybaptiste.dev" 
                         target="_blank" 
