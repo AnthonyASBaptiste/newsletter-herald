@@ -12,15 +12,10 @@ class Settings(BaseSettings):
     api_key: str
     openai_api_key: Optional[str] = None
     openrouter_api_key: Optional[str] = None
-    anthropic_api_key: str
+    anthropic_api_key: Optional[str] = None
     groq_api_key: Optional[str] = None
     groq_model: str = "llama-3.3-70b-versatile"
     
-    # Stack Auth Configuration
-    stack_project_id: str
-    stack_publishable_client_key: str
-    stack_secret_server_key: str
-
     # Database Configuration
     database_url: str
 
