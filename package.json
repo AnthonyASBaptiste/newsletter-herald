@@ -1,6 +1,6 @@
 {
   "name": "newsletter-herald",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Roman Catholic church newsletter summarization and delivery system",
   "scripts": {
     "dev:backend": "cd backend && .\\venv\\Scripts\\python -m uvicorn main:app --reload",
