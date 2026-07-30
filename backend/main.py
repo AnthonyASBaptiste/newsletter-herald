@@ -304,6 +304,68 @@ async def upload_summary(
             summary["status"] = status
             summary["target_sunday"] = target_sunday.isoformat()
 
+            # Handle Eval/Demo Mode (Immediate Preview Dispatch)
+            demo_mode_header = request.headers.get("x-demo-mode", "false").lower() == "true"
+            demo_mode_param = request.query_params.get("demo_mode", "false").lower() == "true"
+            is_demo_mode = demo_mode_header or demo_mode_param
+
+            demo_sent = False
+            demo_recipient = None
+
+            if is_demo_mode:
+                logger.info("Demo/Eval Mode active: Dispatching immediate preview email...")
+                if "@" in uploader:
+                    demo_recipient = uploader
+                elif settings.gmail_user:
+                    demo_recipient = settings.gmail_user
+                elif settings.from_email:
+                    demo_recipient = settings.from_email
+                else:
+                    demo_recipient = "admin@newsletterherald.com"
+
+                demo_subject = f"[DEMO/PREVIEW] {summary['title']}"
+                demo_html = f"""
+                <html>
+                <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
+                    <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
+                        <div style='background-color: #fff3cd; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; font-weight: bold; text-align: center; font-size: 14px;'>
+                            🧪 DEMO / PREVIEW MODE — Immediate Submission Simulation
+                        </div>
+                        <h2 style='color: #0071e3;'>{summary['title']}</h2>
+                        <div style='font-size: 16px;'>
+                            {summary['summary'].replace('\\n', '<br>')}
+                        </div>
+                        <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
+                        <p style='font-size: 12px; color: #86868b;'>This is an immediate demo simulation of the scheduled Sunday email dispatch. Target Sunday: {target_sunday}</p>
+                    </div>
+                </body>
+                </html>
+                """
+
+                try:
+                    from helpers.email import send_newsletter_email
+                    demo_sent = send_newsletter_email(
+                        to_email=demo_recipient,
+                        subject=demo_subject,
+                        html_content=demo_html
+                    )
+                    logger.info(f"Demo preview email sent to {demo_recipient}: status={demo_sent}")
+
+                    await database.execute(
+                        delivery_logs.insert().values(
+                            newsletter_id=newsletter_id,
+                            recipient=demo_recipient,
+                            status="demo_sent" if demo_sent else "demo_failed",
+                            error_message=None if demo_sent else "Demo SMTP delivery failure",
+                        )
+                    )
+                except Exception as demo_err:
+                    logger.error(f"Failed to send demo preview email: {demo_err}")
+
+            summary["demo_mode"] = is_demo_mode
+            summary["demo_sent"] = demo_sent
+            summary["demo_recipient"] = demo_recipient
+
             # Notify local agent of the review request or validation failure
             if is_valid:
                 await notify_agent(

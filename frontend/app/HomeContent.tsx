@@ -27,7 +27,10 @@ import {
   Card,
   CardContent,
   TextField,
-  Divider
+  Divider,
+  Switch,
+  FormControlLabel,
+  Tooltip
 } from '@mui/material';
 import ArticleIcon from '@mui/icons-material/Article';
 import CloseIcon from '@mui/icons-material/Close';
@@ -99,6 +102,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
 
   // Upload Modal State
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [evalDemoMode, setEvalDemoMode] = useState(false);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
 
   // Edit Schedule Modal State
@@ -207,6 +211,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         headers: {
           'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630', 
           'X-User-Email': userEmail || 'anonymous',
+          'X-Demo-Mode': evalDemoMode ? 'true' : 'false',
         },
       });
 
@@ -229,6 +234,10 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       setTags(tagsList.join(', '));
       setUploadModalOpen(false); // Close modal on success
       setFile(null); // Clear selected file
+
+      if (data.summary?.demo_mode) {
+        alert(`🧪 [DEMO / PREVIEW MODE ACTIVE]\n\nNewsletter uploaded & immediate preview email sent!\nRecipient: ${data.summary.demo_recipient || userEmail || 'your email'}\nSubject: [DEMO/PREVIEW] ${data.summary.title}`);
+      }
     } catch (err) {
       const error = err as Error;
       setError(error.message);
@@ -476,7 +485,37 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                 </Typography>
               </Box>
               
-              <Stack direction="row" spacing={2}>
+              <Stack direction="row" spacing={2} alignItems="center">
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    px: 2,
+                    py: 0.5,
+                    borderRadius: '980px',
+                    borderColor: evalDemoMode ? '#ffa726' : '#e0e0e0',
+                    bgcolor: evalDemoMode ? '#fff8e1' : '#fcfcfc',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={evalDemoMode}
+                        onChange={(e) => setEvalDemoMode(e.target.checked)}
+                        size="small"
+                        color="warning"
+                      />
+                    }
+                    label={
+                      <Typography variant="body2" fontWeight={700} color={evalDemoMode ? "warning.dark" : "text.secondary"}>
+                        🧪 Eval / Demo Mode
+                      </Typography>
+                    }
+                    sx={{ m: 0 }}
+                  />
+                </Paper>
                 <Link href="/preview" style={{ textDecoration: 'none' }}>
                   <Button
                     variant="outlined"
@@ -944,6 +983,39 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               PDF or DOCX files up to 20MB
             </Typography>
           </Box>
+
+          <Paper
+            variant="outlined"
+            sx={{
+              mt: 3,
+              p: 2,
+              borderRadius: 2,
+              borderColor: evalDemoMode ? '#ffa726' : '#e0e0e0',
+              bgcolor: evalDemoMode ? '#fff8e1' : '#fafafa',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={evalDemoMode}
+                  onChange={(e) => setEvalDemoMode(e.target.checked)}
+                  color="warning"
+                />
+              }
+              label={
+                <Box>
+                  <Typography variant="body2" fontWeight={700} color={evalDemoMode ? "warning.dark" : "text.primary"}>
+                    🧪 Eval / Demo Mode (Immediate Submission Preview)
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    Simulates scheduled process in one fell swoop. Sends sample preview email to <strong>{userEmail}</strong> with subject prefixed by <code>[DEMO/PREVIEW]</code>.
+                  </Typography>
+                </Box>
+              }
+              sx={{ width: '100%', m: 0 }}
+            />
+          </Paper>
         </DialogContent>
         <DialogActions sx={{ p: 3 }}>
           <Button onClick={() => setUploadModalOpen(false)} disabled={loading}>
