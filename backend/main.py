@@ -83,12 +83,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
+# Configure CORS with strict security controls:
+# 1. Explicit production and local development origins
+# 2. Dynamic regex matching for Vercel preview deployments (*.vercel.app)
+cors_origins_list = [
+    "https://newsletter-herald.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+if settings.cors_origins:
+    if isinstance(settings.cors_origins, list):
+        cors_origins_list.extend(settings.cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=cors_origins_list,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
