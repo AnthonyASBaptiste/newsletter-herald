@@ -12,3 +12,5 @@ backend/venv/
 **/*.pyd
 GRAPH.md
 
+backend/.env.prod
+frontend/.env.prod
