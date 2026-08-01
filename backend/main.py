@@ -13,7 +13,6 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from starlette.concurrency import run_in_threadpool
 
 from helpers.key_utils import verify_api_key
 from helpers.text_utils import (
@@ -84,12 +83,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS
+# Configure CORS with strict security controls:
+# 1. Explicit production and local development origins
+# 2. Dynamic regex matching for Vercel preview deployments (*.vercel.app)
+cors_origins_list = [
+    "https://newsletter-herald.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+if settings.cors_origins:
+    if isinstance(settings.cors_origins, list):
+        cors_origins_list.extend(settings.cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=cors_origins_list,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -304,6 +315,69 @@ async def upload_summary(
             summary["drive_web_view_link"] = web_view_link
             summary["status"] = status
             summary["target_sunday"] = target_sunday.isoformat()
+
+            # Handle Eval/Demo Mode (Immediate Preview Dispatch)
+            demo_mode_header = request.headers.get("x-demo-mode", "false").lower() == "true"
+            demo_mode_param = request.query_params.get("demo_mode", "false").lower() == "true"
+            is_demo_mode = demo_mode_header or demo_mode_param
+
+            demo_sent = False
+            demo_recipient = None
+
+            if is_demo_mode:
+                logger.info("Demo/Eval Mode active: Dispatching immediate preview email...")
+                if "@" in uploader:
+                    demo_recipient = uploader
+                elif settings.gmail_user:
+                    demo_recipient = settings.gmail_user
+                elif settings.from_email:
+                    demo_recipient = settings.from_email
+                else:
+                    demo_recipient = "admin@newsletterherald.com"
+
+                demo_subject = f"[DEMO/PREVIEW] {summary['title']}"
+                summary_formatted = summary['summary'].replace('\n', '<br>')
+                demo_html = f"""
+                <html>
+                <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
+                    <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
+                        <div style='background-color: #fff3cd; color: #856404; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; font-weight: bold; text-align: center; font-size: 14px;'>
+                            🧪 DEMO / PREVIEW MODE — Immediate Submission Simulation
+                        </div>
+                        <h2 style='color: #0071e3;'>{summary['title']}</h2>
+                        <div style='font-size: 16px;'>
+                            {summary_formatted}
+                        </div>
+                        <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
+                        <p style='font-size: 12px; color: #86868b;'>This is an immediate demo simulation of the scheduled Sunday email dispatch. Target Sunday: {target_sunday}</p>
+                    </div>
+                </body>
+                </html>
+                """
+
+                try:
+                    from helpers.email import send_newsletter_email
+                    demo_sent = send_newsletter_email(
+                        to_email=demo_recipient,
+                        subject=demo_subject,
+                        html_content=demo_html
+                    )
+                    logger.info(f"Demo preview email sent to {demo_recipient}: status={demo_sent}")
+
+                    await database.execute(
+                        delivery_logs.insert().values(
+                            newsletter_id=newsletter_id,
+                            recipient=demo_recipient,
+                            status="demo_sent" if demo_sent else "demo_failed",
+                            error_message=None if demo_sent else "Demo SMTP delivery failure",
+                        )
+                    )
+                except Exception as demo_err:
+                    logger.error(f"Failed to send demo preview email: {demo_err}")
+
+            summary["demo_mode"] = is_demo_mode
+            summary["demo_sent"] = demo_sent
+            summary["demo_recipient"] = demo_recipient
 
             # Notify local agent of the review request or validation failure
             if is_valid:

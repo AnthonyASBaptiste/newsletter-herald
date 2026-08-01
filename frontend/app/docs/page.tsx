@@ -8,8 +8,8 @@ import { auth } from '@clerk/nextjs/server';
 import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
-  title: "Documentation Center - SALLTO Herald",
-  description: "User manuals, operational guidelines, and development changelogs for the SALLTO Herald platform.",
+  title: "Documentation Center - Newsletter Herald",
+  description: "User manuals, operational guidelines, and development changelogs for the Newsletter Herald platform.",
 };
 
 export default async function DocsPage() {

@@ -87,31 +87,54 @@ async def check_and_deliver():
             </html>
             """
             
-            for sub in active_subs:
-                recipient = sub['email']
-                success = send_newsletter_email(
-                    to_email=recipient,
-                    subject=item['title'],
-                    html_content=html_content
-                )
-                
-                # Log dispatch status
+            # Create a Semaphore to limit the number of concurrent email deliveries (e.g. max 10 concurrent requests)
+            # This is critical to avoid SMTP socket rate limits, Google/SendGrid connection drops, or thread starvation.
+            semaphore = asyncio.Semaphore(10)
+
+            async def deliver_to_subscriber(sub):
+                async with semaphore:
+                    recipient = sub['email']
+                    try:
+                        # send_newsletter_email is synchronous, so we offload it to a worker thread
+                        success = await asyncio.to_thread(
+                            send_newsletter_email,
+                            to_email=recipient,
+                            subject=item['title'],
+                            html_content=html_content
+                        )
+                    except Exception as email_err:
+                        logger.error(f"Error executing email send to {recipient} in thread: {email_err}")
+                        success = False
+                    return recipient, success
+
+            # Initiate all subscriber delivery tasks concurrently
+            tasks = [deliver_to_subscriber(sub) for sub in active_subs]
+            results = await asyncio.gather(*tasks)
+
+            # Collect results and prepare bulk insert for logs
+            log_values = []
+            for recipient, success in results:
                 status = "sent" if success else "failed"
                 err_msg = None if success else "SMTP delivery failure"
                 
-                await database.execute(
-                    delivery_logs.insert().values(
-                        newsletter_id=item['id'],
-                        recipient=recipient,
-                        status=status,
-                        error_message=err_msg
-                    )
-                )
+                log_values.append({
+                    "newsletter_id": item['id'],
+                    "recipient": recipient,
+                    "status": status,
+                    "error_message": err_msg
+                })
                 
                 if success:
                     sent_count += 1
                 else:
                     failed_count += 1
+
+            # Bulk insert delivery logs using databases.execute_many to avoid N+1 DB round-trips
+            if log_values:
+                await database.execute_many(
+                    query=delivery_logs.insert(),
+                    values=log_values
+                )
 
             # Mark newsletter as delivered
             update_query = newsletters.update().where(newsletters.c.id == item['id']).values(

@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     groq_api_key: Optional[str] = None
 
     # Application Configuration
-    app_name: str = "SALLTO Herald API Gateway"
+    app_name: str = "Newsletter Herald API Gateway"
     debug: bool = False
 
     # API Configuration

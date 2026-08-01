@@ -1,10 +1,11 @@
-# SALLTO Herald — Admin User Manual
-Welcome to SALLTO Herald! This guide explains how to manage the parish bulletin summarization, archives, and email subscription lists.
+# Newsletter Herald — Admin User Manual
+Welcome to Newsletter Herald! This guide explains how to manage the parish bulletin summarization, archives, and email subscription lists.
 
 ---
 
-## 📋 Overview
-SALLTO Herald is an automated liturgical newsletter pipeline. It parses weekly parish bulletins, extracts theological and calendar metadata, generates warm summaries using Groq Cloud AI, and distributes the email newsletter directly to your active parish subscriber database.
+## 📌 Executive Summary
+
+Newsletter Herald is an automated liturgical newsletter pipeline. It parses weekly parish bulletins, extracts theological and calendar metadata, generates warm summaries using Groq Cloud AI, and distributes the email newsletter directly to your active parish subscriber database.
 
 ---
 

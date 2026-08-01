@@ -10,7 +10,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import get_settings
 from db.setup import database
 from db.models import newsletters, summaries, model_usage
-from helpers.storage import list_files_in_folder, download_from_drive, upload_to_drive, make_file_public
+from helpers.storage import list_files_in_folder, download_from_drive, upload_to_drive
 from helpers.text_utils import extract_text_from_file, generate_pdf_thumbnail, sanitize_filename, compress_pdf
 from llm.providers import choose_llm_and_summarize
 
