@@ -75,56 +75,11 @@ function SystemErrorsPageContent() {
   const { isLoaded, isSignedIn, user } = useUser();
   const { signOut } = useClerk();
 
-  useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      window.location.href = '/';
-    }
-  }, [isLoaded, isSignedIn]);
-
-  if (!isLoaded || !isSignedIn) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
-  }
-
   const userEmail = user?.primaryEmailAddress?.emailAddress;
 
   // Admin Email Whitelist check
   const ADMIN_WHITELIST = ['sallto.newsletter@gmail.com', 'anthony.as.baptiste@gmail.com'];
-  const hasAdminAccess = userEmail && ADMIN_WHITELIST.includes(userEmail);
-
-  if (!hasAdminAccess) {
-    return (
-      <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f7', p: 3 }}>
-        <Paper sx={{ p: 5, maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)' }}>
-          <Box sx={{ width: 64, height: 64, bgcolor: '#fce8e6', color: '#d93025', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
-            <ErrorOutlineIcon sx={{ fontSize: 32 }} />
-          </Box>
-          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.01em', color: '#1d1d1f' }}>
-            Access Denied
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
-            Your account (<strong>{userEmail}</strong>) is not authorized to access system error logs.
-          </Typography>
-          <Stack spacing={2} direction="row" justifyContent="center">
-            <Button 
-              variant="outlined" 
-              onClick={() => signOut()} 
-              sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
-            >
-              Sign Out
-            </Button>
-            <Link href="/" style={{ textDecoration: 'none' }}>
-              <Button 
-                variant="contained" 
-                sx={{ borderRadius: '980px', textTransform: 'none', px: 3, bgcolor: '#0071e3', '&:hover': { bgcolor: '#0077ed' } }}
-              >
-                Go to Dashboard
-              </Button>
-            </Link>
-          </Stack>
-        </Paper>
-      </Box>
-    );
-  }
+  const hasAdminAccess = userEmail ? ADMIN_WHITELIST.includes(userEmail) : false;
 
   const [activeTab, setActiveTab] = useState(0);
   const [errorLogs, setErrorLogs] = useState<ErrorNewsletter[]>([]);
@@ -180,11 +135,56 @@ function SystemErrorsPageContent() {
   }, [backendUrl]);
 
   useEffect(() => {
-    if (user) {
+    if (isLoaded && !isSignedIn) {
+      window.location.href = '/';
+    }
+  }, [isLoaded, isSignedIn]);
+
+  useEffect(() => {
+    if (user && hasAdminAccess) {
       fetchErrorNewsletters();
       fetchUploadLogs();
     }
-  }, [user, fetchErrorNewsletters, fetchUploadLogs]);
+  }, [user, hasAdminAccess, fetchErrorNewsletters, fetchUploadLogs]);
+
+  if (!isLoaded || !isSignedIn) {
+    return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
+  }
+
+  if (!hasAdminAccess) {
+    return (
+      <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f7', p: 3 }}>
+        <Paper sx={{ p: 5, maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)' }}>
+          <Box sx={{ width: 64, height: 64, bgcolor: '#fce8e6', color: '#d93025', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
+            <ErrorOutlineIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.01em', color: '#1d1d1f' }}>
+            Access Denied
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
+            Your account (<strong>{userEmail}</strong>) is not authorized to access system error logs.
+          </Typography>
+          <Stack spacing={2} direction="row" justifyContent="center">
+            <Button 
+              variant="outlined" 
+              onClick={() => signOut()} 
+              sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
+            >
+              Sign Out
+            </Button>
+            <Link href="/" style={{ textDecoration: 'none' }}>
+              <Button 
+                variant="contained" 
+                sx={{ borderRadius: '980px', textTransform: 'none', px: 3, bgcolor: '#0071e3', '&:hover': { bgcolor: '#0077ed' } }}
+              >
+                Go to Dashboard
+              </Button>
+            </Link>
+          </Stack>
+        </Paper>
+      </Box>
+    );
+  }
 
   const handleApprove = async (id: number) => {
     try {

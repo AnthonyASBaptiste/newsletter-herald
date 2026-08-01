@@ -5,7 +5,6 @@ import {
   Box,
   Container,
   Typography,
-  Paper,
   Button,
   TextField,
   Alert,
@@ -46,8 +45,9 @@ export default function PublicSignupPage() {
 
       setSuccess(data.message || 'Successfully subscribed!');
       setEmail('');
-    } catch (err: any) {
-      setError(err.message || 'Failed to complete signup');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to complete signup';
+      setError(message);
     } finally {
       setLoading(false);
     }

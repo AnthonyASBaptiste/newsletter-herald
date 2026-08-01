@@ -1,7 +1,6 @@
 import asyncio
 import time
 import os
-import io
 import sys
 from starlette.concurrency import run_in_threadpool
 
