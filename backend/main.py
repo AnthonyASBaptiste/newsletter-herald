@@ -594,7 +594,7 @@ async def download_newsletter_file(newsletter_id: int):
 
 
 @app.get("/newsletters")
-async def get_newsletters() -> JSONResponse:
+async def get_newsletters(_: None = Depends(verify_api_key)) -> JSONResponse:
     """
     Fetches all newsletters and their associated summaries from the database.
     """
