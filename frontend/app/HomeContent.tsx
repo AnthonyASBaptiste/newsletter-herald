@@ -29,8 +29,7 @@ import {
   TextField,
   Divider,
   Switch,
-  FormControlLabel,
-  Tooltip
+  FormControlLabel
 } from '@mui/material';
 import ArticleIcon from '@mui/icons-material/Article';
 import CloseIcon from '@mui/icons-material/Close';
@@ -46,7 +45,6 @@ import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditIcon from '@mui/icons-material/Edit';
 import { useUser, useClerk } from "@clerk/nextjs";
 import Link from "next/link";
-import { useSearchParams } from 'next/navigation';
 
 interface Newsletter {
   id: number;
@@ -74,7 +72,7 @@ interface SummaryResponse {
 
 
 export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) {
-  const { isLoaded, isSignedIn, user: clerkUser } = useUser();
+  const { isSignedIn, user: clerkUser } = useUser();
   const { signOut } = useClerk();
   
   const user = (forcePublic || !isSignedIn) ? null : clerkUser;

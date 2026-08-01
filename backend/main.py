@@ -12,7 +12,6 @@ from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
 from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from starlette.concurrency import run_in_threadpool
 
 from helpers.key_utils import verify_api_key
 from helpers.text_utils import (
