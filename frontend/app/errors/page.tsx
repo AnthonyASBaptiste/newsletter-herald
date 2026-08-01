@@ -102,7 +102,11 @@ function SystemErrorsPageContent() {
   const fetchErrorNewsletters = useCallback(async () => {
     setLoadingNewsletters(true);
     try {
-      const response = await fetch(`${backendUrl}/newsletters`);
+      const response = await fetch(`${backendUrl}/newsletters`, {
+        headers: {
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         const failures = (data.newsletters || []).filter((n: ErrorNewsletter) => n.status === 'failed_validation');
