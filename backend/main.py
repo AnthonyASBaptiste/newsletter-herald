@@ -4,6 +4,7 @@ import os
 import io
 import json
 import asyncio
+import html
 from typing import Dict, Any
 from datetime import datetime
 from pydantic import BaseModel
@@ -604,6 +605,10 @@ async def approve_newsletter_summary(newsletter_id: int, request: Request):
             else "http://localhost:3000"
         )
 
+        safe_filename = html.escape(filename)
+        safe_target_sunday = html.escape(str(target_sunday))
+        safe_redirect_url = html.escape(redirect_url, quote=True)
+
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -621,8 +626,8 @@ async def approve_newsletter_summary(newsletter_id: int, request: Request):
         <body>
             <div class="card">
                 <h1>✓ Approved & Scheduled</h1>
-                <p>The newsletter <strong>{filename}</strong> has been approved.<br>It is scheduled for delivery on <strong>Sunday {target_sunday} at 8:00 AM</strong>.</p>
-                <a href="{redirect_url}" class="btn">Go to Dashboard</a>
+                <p>The newsletter <strong>{safe_filename}</strong> has been approved.<br>It is scheduled for delivery on <strong>Sunday {safe_target_sunday} at 8:00 AM</strong>.</p>
+                <a href="{safe_redirect_url}" class="btn">Go to Dashboard</a>
             </div>
         </body>
         </html>
@@ -733,6 +738,9 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
             else "http://localhost:3000"
         )
 
+        safe_filename = html.escape(filename)
+        safe_redirect_url = html.escape(redirect_url, quote=True)
+
         return HTMLResponse(content=f"""
         <!DOCTYPE html>
         <html>
@@ -750,8 +758,8 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
         <body>
             <div class="card">
                 <h1>🔄 Regenerated Successfully</h1>
-                <p>A new AI summary has been generated for <strong>{filename}</strong>.<br>The review notification has been sent to your WhatsApp/Signal channels.</p>
-                <a href="{redirect_url}" class="btn">Go to Dashboard</a>
+                <p>A new AI summary has been generated for <strong>{safe_filename}</strong>.<br>The review notification has been sent to your WhatsApp/Signal channels.</p>
+                <a href="{safe_redirect_url}" class="btn">Go to Dashboard</a>
             </div>
         </body>
         </html>
