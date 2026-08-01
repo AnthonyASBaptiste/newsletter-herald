@@ -38,10 +38,9 @@ def test_mask_email():
 
     if failed:
         print("\n[FAIL] Some test cases did not pass.")
-        sys.exit(1)
+        assert False, "Some test cases failed"
     else:
         print("\n[SUCCESS] All test cases passed successfully!")
-        sys.exit(0)
 
 if __name__ == "__main__":
     test_mask_email()

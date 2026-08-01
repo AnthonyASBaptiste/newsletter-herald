@@ -183,7 +183,7 @@ async def upload_summary(
         # Generate summary
         try:
             logger.info("Generating summary using LLM")
-            summary = choose_llm_and_summarize(text)
+            summary = await run_in_threadpool(choose_llm_and_summarize, text)
 
             # Sanitize and standardize filename
             standard_filename = sanitize_filename(file.filename)
@@ -764,7 +764,7 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
         text = extract_text_from_file(io.BytesIO(content), file_type=file_type)
 
         # 4. Summarize again
-        summary_data = choose_llm_and_summarize(text)
+        summary_data = await run_in_threadpool(choose_llm_and_summarize, text)
 
         # 5. Update summaries database
         update_query = (
