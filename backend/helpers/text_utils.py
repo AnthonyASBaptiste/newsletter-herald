@@ -11,6 +11,22 @@ from typing import Union, BinaryIO, Optional, IO
 # Create a logger for this module
 logger = logging.getLogger(__name__)
 
+# Common month names mapping for date extraction
+MONTHS_MAP = {
+    'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
+    'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
+}
+
+# Pre-compiled regular expression patterns for date extraction from filenames (ordered by specificity)
+FILENAME_DATE_PATTERNS = [
+    # DD Month YYYY (e.g., 15 Feb 2026, 8Dec2024, 15th March 2025)
+    re.compile(r'(\d{1,2})(?:st|nd|rd|th)?\s*([A-Za-z]{3,})\s*(\d{4})', re.IGNORECASE),
+    # Month DD YYYY (e.g., Feb 1 2026)
+    re.compile(r'([A-Za-z]{3,})\s*(\d{1,2})(?:st|nd|rd|th)?\s*(\d{4})', re.IGNORECASE),
+    # DD.MM.YY or DD.MM.YYYY
+    re.compile(r'(\d{1,2})[._/](\d{1,2})[._/](\d{2,4})', re.IGNORECASE),
+]
+
 
 def sanitize_filename(filename: str) -> str:
     """
@@ -19,40 +35,24 @@ def sanitize_filename(filename: str) -> str:
     """
     _, ext = os.path.splitext(filename)
     
-    # Common month names mapping
-    months_map = {
-        'jan': 1, 'feb': 2, 'mar': 3, 'apr': 4, 'may': 5, 'jun': 6,
-        'jul': 7, 'aug': 8, 'sep': 9, 'oct': 10, 'nov': 11, 'dec': 12
-    }
-    
     found_date = None
     
-    # Patterns to try (ordered by specificity)
-    patterns = [
-        # DD Month YYYY (e.g., 15 Feb 2026, 8Dec2024, 15th March 2025)
-        r'(\d{1,2})(?:st|nd|rd|th)?\s*([A-Za-z]{3,})\s*(\d{4})',
-        # Month DD YYYY (e.g., Feb 1 2026)
-        r'([A-Za-z]{3,})\s*(\d{1,2})(?:st|nd|rd|th)?\s*(\d{4})',
-        # DD.MM.YY or DD.MM.YYYY
-        r'(\d{1,2})[._/](\d{1,2})[._/](\d{2,4})',
-    ]
-    
-    for i, pattern in enumerate(patterns):
-        match = re.search(pattern, filename, re.IGNORECASE)
+    for i, pattern in enumerate(FILENAME_DATE_PATTERNS):
+        match = pattern.search(filename)
         if match:
             try:
                 if i == 0: # DD Month YYYY
                     day = int(match.group(1))
                     month_str = match.group(2)[:3].lower()
                     year = int(match.group(3))
-                    if month_str in months_map:
-                        found_date = datetime.date(year, months_map[month_str], day)
+                    if month_str in MONTHS_MAP:
+                        found_date = datetime.date(year, MONTHS_MAP[month_str], day)
                 elif i == 1: # Month DD YYYY
                     month_str = match.group(1)[:3].lower()
                     day = int(match.group(2))
                     year = int(match.group(3))
-                    if month_str in months_map:
-                        found_date = datetime.date(year, months_map[month_str], day)
+                    if month_str in MONTHS_MAP:
+                        found_date = datetime.date(year, MONTHS_MAP[month_str], day)
                 elif i == 2: # DD.MM.YY
                     day = int(match.group(1))
                     month = int(match.group(2))
@@ -64,7 +64,7 @@ def sanitize_filename(filename: str) -> str:
                 if found_date:
                     break
             except Exception as e:
-                logger.debug(f"Failed to parse date with pattern {pattern}: {e}")
+                logger.debug(f"Failed to parse date with pattern {pattern.pattern}: {e}")
                 continue
 
     if not found_date:

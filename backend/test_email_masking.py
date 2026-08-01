@@ -38,9 +38,13 @@ def test_mask_email():
 
     if failed:
         print("\n[FAIL] Some test cases did not pass.")
-        assert False, "Some test cases failed"
+        assert False, "Some email masking test cases failed"
     else:
         print("\n[SUCCESS] All test cases passed successfully!")
 
 if __name__ == "__main__":
-    test_mask_email()
+    try:
+        test_mask_email()
+        sys.exit(0)
+    except AssertionError:
+        sys.exit(1)
