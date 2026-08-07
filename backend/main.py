@@ -5,11 +5,11 @@ import io
 import json
 import asyncio
 import html
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, Query
 from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -524,10 +524,14 @@ async def update_newsletter(
         raise HTTPException(status_code=500, detail=f"Error updating newsletter: {e}")
 
 
+THUMBNAIL_BYTES_CACHE: Dict[str, bytes] = {}
+
+
 @app.get("/newsletters/{newsletter_id}/thumbnail")
 async def get_newsletter_thumbnail(newsletter_id: int):
     """
-    Serves the newsletter thumbnail directly by downloading it from R2 or Google Drive.
+    Serves the newsletter thumbnail directly by downloading it from R2 or Google Drive,
+    cached in memory and with HTTP Cache-Control headers for browser caching.
     """
     try:
         # Fetch the thumbnail key/id from the database
@@ -540,14 +544,22 @@ async def get_newsletter_thumbnail(newsletter_id: int):
 
         thumbnail_id = row["thumbnail_drive_id"]
 
-        # Download file bytes
-        content = download_from_drive(thumbnail_id)
-        if not content:
-            raise HTTPException(
-                status_code=404, detail="Failed to retrieve thumbnail data"
-            )
+        # Check in-memory cache first
+        if thumbnail_id in THUMBNAIL_BYTES_CACHE:
+            content = THUMBNAIL_BYTES_CACHE[thumbnail_id]
+        else:
+            # Download file bytes and store in memory cache
+            content = download_from_drive(thumbnail_id)
+            if not content:
+                raise HTTPException(
+                    status_code=404, detail="Failed to retrieve thumbnail data"
+                )
+            THUMBNAIL_BYTES_CACHE[thumbnail_id] = content
 
-        return StreamingResponse(io.BytesIO(content), media_type="image/png")
+        headers = {
+            "Cache-Control": "public, max-age=2592000, immutable",
+        }
+        return Response(content=content, media_type="image/png", headers=headers)
     except HTTPException:
         raise
     except Exception as e:
@@ -594,22 +606,45 @@ async def download_newsletter_file(newsletter_id: int):
 
 
 @app.get("/newsletters")
-async def get_newsletters(_: None = Depends(verify_api_key)) -> JSONResponse:
+async def get_newsletters(
+    limit: Optional[int] = Query(None, ge=1),
+    offset: int = Query(0, ge=0),
+    status: Optional[str] = Query(None),
+    _: None = Depends(verify_api_key)
+) -> JSONResponse:
     """
-    Fetches all newsletters and their associated summaries from the database.
+    Fetches newsletters and their associated summaries from the database,
+    supporting pagination (limit & offset) and status filtering.
     """
-    logger.info("Fetching all newsletters from the database")
+    logger.info(f"Fetching newsletters (limit={limit}, offset={offset}, status={status})")
     try:
-        query = """
+        where_clause = ""
+        params = {}
+        if status:
+            where_clause = "WHERE n.status = :status"
+            params["status"] = status
+
+        count_query = f"SELECT COUNT(*) FROM newsletters n {where_clause}"
+        total_count = await database.fetch_val(query=count_query, values=params) or 0
+
+        pagination_clause = ""
+        if limit is not None:
+            pagination_clause = "LIMIT :limit OFFSET :offset"
+            params["limit"] = limit
+            params["offset"] = offset
+
+        query = f"""
             SELECT 
                 n.id, n.filename, n.drive_web_view_link, n.thumbnail_drive_id, n.uploaded_at,
                 n.status, n.target_sunday, n.tags, n.scheduled_at,
                 s.title, s.summary
             FROM newsletters n
             LEFT JOIN summaries s ON n.id = s.newsletter_id
+            {where_clause}
             ORDER BY n.target_sunday DESC, n.uploaded_at DESC
+            {pagination_clause}
         """
-        rows = await database.fetch_all(query)
+        rows = await database.fetch_all(query=query, values=params)
 
         result = []
         for row in rows:
@@ -627,7 +662,13 @@ async def get_newsletters(_: None = Depends(verify_api_key)) -> JSONResponse:
                 "summary": row["summary"]
             })
 
-        return JSONResponse(content={"newsletters": result})
+        has_more = (offset + len(result)) < total_count if limit is not None else False
+
+        return JSONResponse(content={
+            "newsletters": result,
+            "total": total_count,
+            "has_more": has_more
+        })
     except Exception as e:
         logger.error(f"Error fetching newsletters: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching newsletters: {e}")

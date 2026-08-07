@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Box, 
   Container, 
@@ -113,10 +113,23 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
 
+  // Infinite scroll & Pagination state
+  const INITIAL_BATCH = 6;
+  const SCROLL_BATCH = 3;
+
+  const [visibleCount, setVisibleCount] = useState<number>(INITIAL_BATCH);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
+  const [hasMoreBackend, setHasMoreBackend] = useState<boolean>(true);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   const fetchNewsletters = useCallback(async () => {
     setFetchingNewsletters(true);
     try {
-      const response = await fetch(`${backendUrl}/newsletters`, {
+      const url = user 
+        ? `${backendUrl}/newsletters`
+        : `${backendUrl}/newsletters?limit=${INITIAL_BATCH}&offset=0`;
+
+      const response = await fetch(url, {
         headers: {
           'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
         },
@@ -124,13 +137,73 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       if (response.ok) {
         const data = await response.json();
         setPublicNewsletters(data.newsletters || []);
+        if (!user) {
+          setHasMoreBackend(data.has_more ?? false);
+        }
       }
     } catch (err) {
       console.error("Failed to fetch newsletters:", err);
     } finally {
       setFetchingNewsletters(false);
     }
-  }, [backendUrl]);
+  }, [backendUrl, user]);
+
+  const fetchMoreNewsletters = useCallback(async () => {
+    if (loadingMore || !hasMoreBackend) return;
+    setLoadingMore(true);
+    try {
+      const currentOffset = publicNewsletters.length;
+      const response = await fetch(
+        `${backendUrl}/newsletters?limit=${SCROLL_BATCH}&offset=${currentOffset}`,
+        {
+          headers: {
+            'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          },
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        const newItems: Newsletter[] = data.newsletters || [];
+        setHasMoreBackend(data.has_more ?? false);
+        setPublicNewsletters((prev) => {
+          const existingIds = new Set(prev.map((n) => n.id));
+          const uniqueNew = newItems.filter((n) => !existingIds.has(n.id));
+          return [...prev, ...uniqueNew];
+        });
+        setVisibleCount((prev) => prev + newItems.length);
+      }
+    } catch (err) {
+      console.error("Failed to load more newsletters:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [backendUrl, loadingMore, hasMoreBackend, publicNewsletters.length]);
+
+  useEffect(() => {
+    setVisibleCount(INITIAL_BATCH);
+  }, [selectedTag]);
+
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && !fetchingNewsletters && !loadingMore) {
+          if (!user && hasMoreBackend) {
+            fetchMoreNewsletters();
+          } else {
+            setVisibleCount((prev) => prev + SCROLL_BATCH);
+          }
+        }
+      },
+      { rootMargin: '200px', threshold: 0.1 }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.unobserve(sentinel);
+  }, [fetchingNewsletters, loadingMore, hasMoreBackend, user, fetchMoreNewsletters]);
 
   const fetchSubscribersCount = useCallback(async () => {
     try {
@@ -709,6 +782,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                         <img 
                           src={`${backendUrl}/newsletters/${latestScheduled.id}/thumbnail`} 
                           alt="Thumbnail preview"
+                          loading="lazy"
                           style={{ width: '100%', display: 'block' }}
                         />
                       </Box>
@@ -834,7 +908,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               <CircularProgress />
             </Box>
           ) : publicNewsletters.length > 0 ? (() => {
-            const filteredNewsletters = publicNewsletters
+            const allFiltered = publicNewsletters
               .filter(n => !user || n.status === 'delivered')
               .filter(n => {
                 if (!selectedTag) return true;
@@ -843,7 +917,9 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                 return tagList.includes(selectedTag);
               });
 
-            if (filteredNewsletters.length === 0) {
+            const displayedNewsletters = allFiltered.slice(0, visibleCount);
+
+            if (allFiltered.length === 0) {
               return (
                 <Box sx={{ textAlign: 'center', py: 8, opacity: 0.6 }}>
                   <Typography variant="body1">No newsletters match the filter category &quot;{selectedTag}&quot;.</Typography>
@@ -855,89 +931,157 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
             }
 
             return (
-              <Grid container spacing={3}>
-                {filteredNewsletters.map((item) => (
-                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>
-                    <Paper sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
-                      <Typography variant="overline" color="primary" sx={{ fontWeight: 700 }}>
-                        {item.target_sunday ? new Date(item.target_sunday + 'T00:00:00Z').toLocaleDateString(undefined, { 
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric',
-                          timeZone: 'UTC'
-                        }) : item.uploaded_at ? new Date(item.uploaded_at).toLocaleDateString(undefined, {
-                          year: 'numeric', 
-                          month: 'long', 
-                          day: 'numeric'
-                        }) : 'Recent'}
-                      </Typography>
-                      <Typography variant="h6" sx={{ mb: 0.5, fontWeight: 700, lineHeight: 1.3 }}>
-                        {item.title || "Weekly Bulletin"}
-                      </Typography>
-
-                      {/* Display Tag Pills Inline inside Cards */}
-                      {item.tags && (
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1, mb: 2 }}>
-                          {item.tags.split(',').map((t: string) => {
-                            const trimmed = t.trim().toLowerCase();
-                            return (
-                              <Chip
-                                key={trimmed}
-                                label={trimmed.replace(/-/g, ' ')}
-                                size="small"
-                                variant="outlined"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTag(trimmed === selectedTag ? null : trimmed);
-                                }}
-                                sx={{ 
-                                  fontSize: '0.7rem', 
-                                  height: '20px', 
-                                  textTransform: 'capitalize',
-                                  borderRadius: '4px',
-                                  borderColor: selectedTag === trimmed ? '#0071e3' : '#e5e5ea',
-                                  color: selectedTag === trimmed ? '#0071e3' : '#8e8e93',
-                                  bgcolor: selectedTag === trimmed ? '#e1f0ff' : 'transparent',
-                                  '&:hover': { bgcolor: '#f2f8fc' }
-                                }}
-                              />
-                            );
-                          })}
-                        </Box>
-                      )}
-
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 3, flexGrow: 1, whiteSpace: 'pre-line', lineHeight: 1.6 }}>
-                        {item.summary ? item.summary.substring(0, 200) + "..." : "Read the latest news from our parish community."}
-                      </Typography>
-                      
-                      <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
-                        <Button 
-                          variant="text" 
-                          color="primary" 
-                          sx={{ p: 0, fontWeight: 600, textTransform: 'none' }}
-                          onClick={() => {
-                            setSelectedNewsletter(item);
-                            setModalOpen(true);
-                          }}
-                        >
-                          Read Summary →
-                        </Button>
-                        {item.drive_link && (
-                          <IconButton 
-                            size="small" 
-                            color="default" 
-                            href={item.drive_link} 
-                            target="_blank"
-                            title="Download original file"
+              <Box>
+                <Grid container spacing={3}>
+                  {displayedNewsletters.map((item) => (
+                    <Grid size={{ xs: 12, sm: 6, md: 4 }} key={item.id}>
+                      <Paper 
+                        sx={{ 
+                          height: '100%', 
+                          display: 'flex', 
+                          flexDirection: 'column', 
+                          borderRadius: 3, 
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                          overflow: 'hidden',
+                          transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                          '&:hover': {
+                            transform: 'translateY(-4px)',
+                            boxShadow: '0 12px 24px rgba(0,0,0,0.08)'
+                          }
+                        }}
+                      >
+                        {item.thumbnail_id && (
+                          <Box 
+                            sx={{ 
+                              width: '100%', 
+                              height: 180, 
+                              bgcolor: '#f5f5f7', 
+                              overflow: 'hidden',
+                              borderBottom: '1px solid #f0f0f0',
+                              cursor: 'pointer'
+                            }}
+                            onClick={() => {
+                              setSelectedNewsletter(item);
+                              setModalOpen(true);
+                            }}
                           >
-                            <DownloadIcon fontSize="small" color="action" />
-                          </IconButton>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img 
+                              src={`${backendUrl}/newsletters/${item.id}/thumbnail`} 
+                              alt={item.title || "Newsletter preview"}
+                              loading="lazy"
+                              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top' }}
+                            />
+                          </Box>
                         )}
-                      </Stack>
-                    </Paper>
-                  </Grid>
-                ))}
-              </Grid>
+                        <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+                          <Typography variant="overline" color="primary" sx={{ fontWeight: 700 }}>
+                            {item.target_sunday ? new Date(item.target_sunday + 'T00:00:00Z').toLocaleDateString(undefined, { 
+                              year: 'numeric', 
+                              month: 'long', 
+                              day: 'numeric',
+                              timeZone: 'UTC'
+                            }) : item.uploaded_at ? new Date(item.uploaded_at).toLocaleDateString(undefined, {
+                              year: 'numeric', 
+                              month: 'long', 
+                              day: 'numeric'
+                            }) : 'Recent'}
+                          </Typography>
+                          <Typography variant="h6" sx={{ mb: 0.5, fontWeight: 700, lineHeight: 1.3 }}>
+                            {item.title || "Weekly Bulletin"}
+                          </Typography>
+
+                          {/* Display Tag Pills Inline inside Cards */}
+                          {item.tags && (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1, mb: 2 }}>
+                              {item.tags.split(',').map((t: string) => {
+                                const trimmed = t.trim().toLowerCase();
+                                return (
+                                  <Chip
+                                    key={trimmed}
+                                    label={trimmed.replace(/-/g, ' ')}
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTag(trimmed === selectedTag ? null : trimmed);
+                                    }}
+                                    sx={{ 
+                                      fontSize: '0.7rem', 
+                                      height: '20px', 
+                                      textTransform: 'capitalize',
+                                      borderRadius: '4px',
+                                      borderColor: selectedTag === trimmed ? '#0071e3' : '#e5e5ea',
+                                      color: selectedTag === trimmed ? '#0071e3' : '#8e8e93',
+                                      bgcolor: selectedTag === trimmed ? '#e1f0ff' : 'transparent',
+                                      '&:hover': { bgcolor: '#f2f8fc' }
+                                    }}
+                                  />
+                                );
+                              })}
+                            </Box>
+                          )}
+
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 3, flexGrow: 1, whiteSpace: 'pre-line', lineHeight: 1.6 }}>
+                            {item.summary ? item.summary.substring(0, 200) + "..." : "Read the latest news from our parish community."}
+                          </Typography>
+                          
+                          <Stack direction="row" spacing={2} justifyContent="space-between" alignItems="center">
+                            <Button 
+                              variant="text" 
+                              color="primary" 
+                              sx={{ p: 0, fontWeight: 600, textTransform: 'none' }}
+                              onClick={() => {
+                                setSelectedNewsletter(item);
+                                setModalOpen(true);
+                              }}
+                            >
+                              Read Summary →
+                            </Button>
+                            {item.drive_link && (
+                              <IconButton 
+                                size="small" 
+                                color="default" 
+                                href={item.drive_link} 
+                                target="_blank"
+                                title="Download original file"
+                              >
+                                <DownloadIcon fontSize="small" color="action" />
+                              </IconButton>
+                            )}
+                          </Stack>
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
+
+                {/* Sentinel Element for Infinite Scroll */}
+                <Box 
+                  ref={sentinelRef} 
+                  sx={{ 
+                    display: 'flex', 
+                    justifyContent: 'center', 
+                    alignItems: 'center', 
+                    py: 4,
+                    minHeight: 60 
+                  }}
+                >
+                  {loadingMore && (
+                    <Stack direction="row" spacing={1.5} alignItems="center">
+                      <CircularProgress size={24} />
+                      <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                        Loading more newsletters...
+                      </Typography>
+                    </Stack>
+                  )}
+                  {(!user ? !hasMoreBackend : visibleCount >= allFiltered.length) && allFiltered.length > 6 && (
+                    <Typography variant="caption" color="text.secondary">
+                      Showing all {allFiltered.length} newsletters
+                    </Typography>
+                  )}
+                </Box>
+              </Box>
             );
           })() : (
             <Box sx={{ textAlign: 'center', py: 5, opacity: 0.6 }}>
@@ -1068,6 +1212,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                   <img 
                     src={`${backendUrl}/newsletters/${selectedNewsletter.id}/thumbnail`} 
                     alt="Newsletter Thumbnail"
+                    loading="lazy"
                     style={{ width: '100%', display: 'block' }}
                   />
                 </Box>

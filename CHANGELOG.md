@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+### [0.1.5](https://github.com/AnthonyASBaptiste/newsletter-herald/compare/v0.1.4...v0.1.5) (2026-08-07)
+
+
+### Features
+
+* add infinite loading and thumbnail caching ([da1b6ac](https://github.com/AnthonyASBaptiste/newsletter-herald/commit/da1b6acdc093caaa3abfe2d91389b818d17d1958))
+
+
+### Bug Fixes
+
+* implement Missing Authentication on Newsletter Retrieval Endpoint ([8f3425c](https://github.com/AnthonyASBaptiste/newsletter-herald/commit/8f3425ca02c9e83c35cdffd56d3dae3e2d7ee883))
+
 ### [0.1.4](https://github.com/AnthonyASBaptiste/newsletter-herald/compare/v0.1.3...v0.1.4) (2026-07-30)
 
 
