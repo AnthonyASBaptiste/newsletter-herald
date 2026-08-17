@@ -43,6 +43,8 @@ import PeopleIcon from '@mui/icons-material/People';
 import ScheduleIcon from '@mui/icons-material/Schedule';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import EditIcon from '@mui/icons-material/Edit';
+import SendIcon from '@mui/icons-material/Send';
+import ArchiveIcon from '@mui/icons-material/Archive';
 import { useUser, useClerk } from "@clerk/nextjs";
 import Link from "next/link";
 
@@ -131,7 +133,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
 
       const response = await fetch(url, {
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
       });
       if (response.ok) {
@@ -157,7 +159,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         `${backendUrl}/newsletters?limit=${SCROLL_BATCH}&offset=${currentOffset}`,
         {
           headers: {
-            'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+            'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
           },
         }
       );
@@ -284,7 +286,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'POST',
         body: formData,
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630', 
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '', 
           'X-User-Email': userEmail || 'anonymous',
           'X-Demo-Mode': evalDemoMode ? 'true' : 'false',
         },
@@ -328,7 +330,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
         body: JSON.stringify({ status: 'draft' }),
       });
@@ -378,12 +380,55 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
         body: JSON.stringify({ status: 'superseded' }),
       });
       if (res.ok) {
         fetchNewsletters();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleSendNow = async (id: number) => {
+    if (!confirm("Are you sure you want to send this newsletter immediately to all active subscribers?")) return;
+    try {
+      const res = await fetch(`${backendUrl}/newsletters/${id}/send-now`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(data.message || "Newsletter sent successfully!");
+        fetchNewsletters();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(errData.detail || "Failed to send newsletter.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error triggering immediate send.");
+    }
+  };
+
+  const handleArchive = async (id: number) => {
+    if (!confirm("Are you sure you want to archive this newsletter? It will be removed from active processing.")) return;
+    try {
+      const res = await fetch(`${backendUrl}/newsletters/${id}/archive`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
+        },
+      });
+      if (res.ok) {
+        alert("Newsletter archived successfully!");
+        fetchNewsletters();
+      } else {
+        alert("Failed to archive newsletter.");
       }
     } catch (err) {
       console.error(err);
@@ -438,7 +483,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
         body: JSON.stringify({
           title: editScheduledTitle,
@@ -819,6 +864,15 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                     <Stack direction="row" spacing={2} useFlexGap flexWrap="wrap">
                       <Button
                         variant="contained"
+                        color="success"
+                        startIcon={<SendIcon />}
+                        onClick={() => handleSendNow(latestScheduled.id)}
+                        sx={{ textTransform: 'none', borderRadius: 2, px: 3, fontWeight: 600 }}
+                      >
+                        Send Now
+                      </Button>
+                      <Button
+                        variant="contained"
                         startIcon={<EditIcon />}
                         onClick={() => handleOpenEditScheduled(latestScheduled)}
                         sx={{ textTransform: 'none', borderRadius: 2, bgcolor: '#0071e3', px: 3 }}
@@ -836,11 +890,20 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                       </Button>
                       <Button
                         variant="outlined"
+                        color="warning"
+                        startIcon={<ArchiveIcon />}
+                        onClick={() => handleArchive(latestScheduled.id)}
+                        sx={{ textTransform: 'none', borderRadius: 2, px: 3 }}
+                      >
+                        Archive
+                      </Button>
+                      <Button
+                        variant="outlined"
                         color="error"
                         onClick={() => handleCancelSchedule(latestScheduled.id)}
                         sx={{ textTransform: 'none', borderRadius: 2, px: 3 }}
                       >
-                        Cancel Scheduled Delivery
+                        Cancel Schedule
                       </Button>
                     </Stack>
 
