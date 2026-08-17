@@ -133,7 +133,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
 
       const response = await fetch(url, {
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
       });
       if (response.ok) {
@@ -159,7 +159,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         `${backendUrl}/newsletters?limit=${SCROLL_BATCH}&offset=${currentOffset}`,
         {
           headers: {
-            'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+            'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
           },
         }
       );
@@ -286,7 +286,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'POST',
         body: formData,
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630', 
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '', 
           'X-User-Email': userEmail || 'anonymous',
           'X-Demo-Mode': evalDemoMode ? 'true' : 'false',
         },
@@ -330,7 +330,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
         body: JSON.stringify({ status: 'draft' }),
       });
@@ -380,7 +380,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
         body: JSON.stringify({ status: 'superseded' }),
       });
@@ -398,7 +398,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       const res = await fetch(`${backendUrl}/newsletters/${id}/send-now`, {
         method: 'POST',
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
       });
       if (res.ok) {
@@ -421,7 +421,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       const res = await fetch(`${backendUrl}/newsletters/${id}/archive`, {
         method: 'POST',
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
       });
       if (res.ok) {
@@ -483,7 +483,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630',
+          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '',
         },
         body: JSON.stringify({
           title: editScheduledTitle,

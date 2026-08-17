@@ -11,7 +11,7 @@ This document specifies the integration protocol for **Hermes Agent** to automat
 |---|---|---|
 | **Backend API URL** | `http://localhost:8000` *(or deployed backend URL)* | Endpoint target |
 | **Dashboard URL** | `https://newsletter-herald.vercel.app` | Production frontend |
-| **API Header** | `X-API-Key: 85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630` | Authentication key |
+| **API Header** | `X-API-Key: YOUR_INTERNAL_API_KEY` | Authentication key |
 | **Target Email Sender** | Irma Carter (`irma.carter@church.org` or parish staff) | Sender filter |
 
 ---
@@ -78,7 +78,7 @@ import requests
 import json
 
 API_URL = "http://localhost:8000/upload-document"
-API_KEY = "85fb0ffd7ff26541e6361e5063bdfbde9299f1938a5ffae44d05ff3f9a4dd630"
+API_KEY = "YOUR_INTERNAL_API_KEY"
 
 def process_and_upload_bulletin(file_path: str, uploader_email: str):
     headers = {
