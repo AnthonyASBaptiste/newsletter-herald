@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, Query
 from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 
 from helpers.key_utils import verify_api_key
@@ -1212,3 +1213,139 @@ async def trigger_newsletter_delivery(
     except Exception as e:
         logger.error(f"Failed to initiate delivery: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/newsletters/{newsletter_id}/send-now")
+async def send_newsletter_now(
+    newsletter_id: int, _: None = Depends(verify_api_key)
+) -> JSONResponse:
+    """
+    Immediately sends a specific newsletter to all active subscribers.
+    """
+    logger.info(f"Initiating immediate send for newsletter {newsletter_id}")
+    try:
+        query = (
+            select(
+                newsletters.c.id,
+                summaries.c.title,
+                summaries.c.summary,
+            )
+            .select_from(
+                newsletters.join(summaries, newsletters.c.id == summaries.c.newsletter_id)
+            )
+            .where(newsletters.c.id == newsletter_id)
+        )
+
+        item = await database.fetch_one(query)
+        if not item:
+            raise HTTPException(status_code=404, detail="Newsletter not found")
+
+        sub_query = select(subscribers.c.email).where(subscribers.c.is_active == True)
+        active_subs = await database.fetch_all(sub_query)
+        if not active_subs:
+            raise HTTPException(status_code=400, detail="No active subscribers to send to")
+
+        html_content = f"""
+        <html>
+        <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
+            <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
+                <h2 style='color: #0071e3;'>{item['title']}</h2>
+                <div style='font-size: 16px;'>
+                    {item['summary'].replace('\n', '<br>')}
+                </div>
+                <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
+                <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, please visit the parish website.</p>
+            </div>
+        </body>
+        </html>
+        """
+
+        from helpers.email import send_newsletter_email
+
+        semaphore = asyncio.Semaphore(10)
+
+        async def deliver_to_subscriber(sub):
+            async with semaphore:
+                recipient = sub["email"]
+                try:
+                    success = await asyncio.to_thread(
+                        send_newsletter_email,
+                        to_email=recipient,
+                        subject=item["title"],
+                        html_content=html_content,
+                    )
+                except Exception as err:
+                    logger.error(f"Error sending email to {recipient}: {err}")
+                    success = False
+                return recipient, success
+
+        tasks = [deliver_to_subscriber(sub) for sub in active_subs]
+        results = await asyncio.gather(*tasks)
+
+        sent_count = 0
+        failed_count = 0
+        log_values = []
+
+        for recipient, success in results:
+            log_values.append(
+                {
+                    "newsletter_id": item["id"],
+                    "recipient": recipient,
+                    "status": "sent" if success else "failed",
+                    "error_message": None if success else "SMTP delivery failure",
+                }
+            )
+            if success:
+                sent_count += 1
+            else:
+                failed_count += 1
+
+        if log_values:
+            await database.execute_many(
+                query=delivery_logs.insert(), values=log_values
+            )
+
+        update_query = (
+            newsletters.update()
+            .where(newsletters.c.id == item["id"])
+            .values(delivered=True, status="delivered")
+        )
+        await database.execute(update_query)
+
+        return JSONResponse(
+            content={
+                "message": f"Newsletter delivered to {sent_count} subscribers successfully ({failed_count} failed).",
+                "sent_count": sent_count,
+                "failed_count": failed_count,
+                "status": "delivered",
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in send_newsletter_now: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/newsletters/{newsletter_id}/archive")
+async def archive_newsletter(
+    newsletter_id: int, _: None = Depends(verify_api_key)
+) -> JSONResponse:
+    """
+    Archives a newsletter so it is no longer pending or active.
+    """
+    logger.info(f"Archiving newsletter {newsletter_id}")
+    try:
+        query = (
+            newsletters.update()
+            .where(newsletters.c.id == newsletter_id)
+            .values(status="archived")
+        )
+        await database.execute(query)
+        return JSONResponse(
+            content={"message": "Newsletter archived successfully", "status": "archived"}
+        )
+    except Exception as e:
+        logger.error(f"Error archiving newsletter {newsletter_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
