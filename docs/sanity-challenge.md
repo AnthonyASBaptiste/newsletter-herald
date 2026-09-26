@@ -124,3 +124,22 @@ Capturing discarded alternatives and why they were turned down:
      - The dispatch service queries Sanity for `approved` / `scheduled` editions when it is time to send.
 5. **Rejected: Premature multi-tenant workspace complexification**:
    - *Why rejected*: Considered setting up multi-workspace configs for multi-parish clusters right away. Rejected to keep the hackathon/challenge scope laser-focused on a rock-solid single parish workflow with clean, extensible foundations that can easily scale out later.
+
+---
+
+## Phase 2: Ingestion Pipeline & Sanity Bridge
+
+In Phase 2, we bridged the existing Herald ingestion and AI summarization pipeline into Sanity Content Lake without disturbing existing PostgreSQL persistence, PDF storage, or email delivery systems:
+
+1. **Decoupled Bridge Execution**:
+   - Implemented [`backend/helpers/sanity_client.py`](file:///home/anthony/Projects/newsletter-herald/backend/helpers/sanity_client.py) using the Sanity HTTP Mutation API (`/data/mutate/production`).
+   - Integrated immediately following PostgreSQL persistence in [`backend/main.py::upload_summary`](file:///home/anthony/Projects/newsletter-herald/backend/main.py#L309-L340) and [`backend/main.py::regenerate_newsletter_summary`](file:///home/anthony/Projects/newsletter-herald/backend/main.py#L850-L875).
+   - Wrapped execution in resilient threadpool dispatch with non-blocking error handling to ensure transactional guarantees in PostgreSQL are never violated if Sanity network mutations fail.
+
+2. **Deterministic Document Identifiers & Schema Compliance**:
+   - Generated deterministic IDs: `edition-herald-{newsletter_id}` and `workflow-herald-{newsletter_id}`.
+   - Enforced schema compliance for `newsletterEdition`: slug generation, validated dates, liturgical season and cycle attribution, embedded pre-flight validation checks, and automatic taxonomy classification into `primaryTheme` and `supportingThemes`.
+   - Populated `editorialWorkflow` with `currentStage: "awaiting_review"`, `decision: "pending"`, and an immutable initial audit history trail (`received` ➔ `processing` ➔ `draft` ➔ `awaiting_review`).
+
+3. **Enriched Editorial Review Handoff**:
+   - Upgraded [`backend/helpers/agent_bridge.py`](file:///home/anthony/Projects/newsletter-herald/backend/helpers/agent_bridge.py) to include direct Sanity Studio desk links (`/structure/newsletterEdition;{edition_id}`) in notification payloads and formatted review messages.

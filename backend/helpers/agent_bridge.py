@@ -32,14 +32,22 @@ async def notify_agent(event_type: str, data: Dict[str, Any]):
             "regenerate_url": f"{base_url}/newsletters/{event_id}/regenerate"
         }
     }
+
+    sanity_edition_id = data.get("sanity_edition_id")
+    sanity_studio_url = getattr(settings, "sanity_studio_url", "http://localhost:3333")
+    if sanity_edition_id:
+        sanity_desk_link = f"{sanity_studio_url}/structure/newsletterEdition;{sanity_edition_id}"
+        event["actions"]["sanity_url"] = sanity_desk_link
     
     # Format a human-readable message for Signal/WhatsApp
     if event_type == "review_request":
+        sanity_line = f"✍️ *Sanity Studio:* {event['actions']['sanity_url']}\n" if "sanity_url" in event["actions"] else ""
         event["formatted_message"] = (
             f"🔔 *New Newsletter Summary for Review*\n\n"
             f"*Target Sunday:* {event['target_sunday']}\n"
             f"*Title:* {event['title']}\n\n"
             f"{event['summary']}\n\n"
+            f"{sanity_line}"
             f"👉 *Approve & Schedule (Sun 8:00 AM):* {event['actions']['approve_url']}\n"
             f"🔄 *Regenerate Summary:* {event['actions']['regenerate_url']}"
         )
