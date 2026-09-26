@@ -99,7 +99,7 @@ if settings.cors_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
