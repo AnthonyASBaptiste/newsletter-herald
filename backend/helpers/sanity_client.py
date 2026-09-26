@@ -198,40 +198,35 @@ def sync_to_sanity(
         validation_checks.append(f"Liturgical cycle identified: {liturgical_year}")
     validation_checks.append("Two-paragraph pastoral digest prepared for parishioners")
 
-    # Build newsletterEdition document
-    edition_doc: Dict[str, Any] = {
-        "_id": edition_id,
-        "_type": "newsletterEdition",
-        "title": title,
-        "slug": {"_type": "slug", "current": slug_current},
-        "sourceFilename": filename,
-        "publicationDate": publication_date_iso,
-        "targetSunday": target_sunday.isoformat(),
-        "primaryTheme": {"_type": "reference", "_ref": primary_theme},
-        "supportingThemes": [
-            {"_key": f"st_{idx}", "_type": "reference", "_ref": tid}
-            for idx, tid in enumerate(supporting_themes)
-        ],
-        "summary": summary_text,
-        "status": "awaiting_review",
-        "validation": {
-            "dateValid": is_valid,
-            "confidence": 0.95 if is_valid else 0.40,
-            "checks": validation_checks,
-        },
-        "aiGenerated": True,
-        "aiModel": ai_model,
-        "createdAt": now_iso,
-        "updatedAt": now_iso,
-    }
+    # Build newsletterEdition document via dedicated mapping layer
+    from helpers.sanity_mapper import map_to_sanity_newsletter_edition
 
-    if drive_web_view_link and drive_web_view_link.startswith(("http://", "https://")):
-        edition_doc["sourceDocumentUrl"] = drive_web_view_link
-    if liturgical_season:
-        edition_doc["liturgicalSeason"] = liturgical_season
-        edition_doc["liturgicalOccasion"] = f"{target_sunday.strftime('%B %d')} in {liturgical_season}"
-    if liturgical_year:
-        edition_doc["liturgicalYear"] = str(liturgical_year)
+    edition_doc = map_to_sanity_newsletter_edition({
+        "edition_id": edition_id,
+        "title": title,
+        "summary": summary_text,
+        "target_sunday": target_sunday,
+        "publication_date": publication_date_iso,
+        "liturgical_season": liturgical_season,
+        "liturgical_year": liturgical_year,
+        "liturgical_occasion": f"{target_sunday.strftime('%B %d')} in {liturgical_season}" if liturgical_season else None,
+        "primary_theme": primary_theme,
+        "supporting_themes": supporting_themes,
+        "ai_generated": True,
+        "ai_model": ai_model,
+        "source_filename": filename,
+        "source_document_url": drive_web_view_link,
+        "created_at": now_iso,
+        "updated_at": now_iso,
+        "workflow_id": workflow_id,
+    })
+
+    # Attach pre-flight validation checklist assessed by Herald
+    edition_doc["validation"] = {
+        "dateValid": is_valid,
+        "confidence": 0.95 if is_valid else 0.40,
+        "checks": validation_checks,
+    }
 
     # Build editorialWorkflow document
     workflow_doc: Dict[str, Any] = {
