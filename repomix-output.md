@@ -157,6 +157,10 @@ studio-newsletter-herald/
     index.ts
     newsletterEdition.ts
     theme.ts
+  scripts/
+    seed.ts
+  seeds/
+    sample-seed.ndjson
   static/
     .gitkeep
   .gitignore
@@ -646,6 +650,97 @@ try {
 } catch {
     Write-Error "Failed to register task. Make sure you are running PowerShell as Administrator: $_"
 }
+````
+
+## File: backend/scripts/test_agent_bridge.py
+````python
+import sys
+import os
+import asyncio
+import json
+import datetime
+from sqlalchemy import select
+
+# Add backend directory to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from helpers.agent_bridge import notify_agent
+from db.setup import database
+from db.models import agent_notifications
+
+async def main():
+    print("Testing local agent bridge (Database Queue)...")
+    await database.connect()
+    
+    try:
+        # 1. Clean previous test notifications if any
+        print("Cleaning up old test notifications...")
+        await database.execute(
+            agent_notifications.delete().where(
+                agent_notifications.c.event_type.in_(["validation_alert", "review_request"])
+            )
+        )
+            
+        # 2. Add validation alert event
+        print("Inserting validation alert...")
+        await notify_agent("validation_alert", {
+            "newsletter_id": 999,
+            "filename": "invalid_newsletter.docx",
+            "target_sunday": datetime.date(2026, 5, 24),
+            "status": "failed_validation",
+            "error_message": "Date mismatch: Expected 2026-05-24 but found 2026-05-17"
+        })
+        
+        # 3. Add review request event
+        print("Inserting review request...")
+        await notify_agent("review_request", {
+            "newsletter_id": 1000,
+            "title": "4th Sunday of Easter Bulletin",
+            "summary": "This is a warm test summary of parish events. Join us for Sunday Mass and our parish fundraising bake sale this weekend.",
+            "target_sunday": datetime.date(2026, 5, 24),
+            "status": "draft"
+        })
+        
+        # 4. Verify database contents
+        print("Verifying agent notifications in DB...")
+        query = select(agent_notifications).where(
+            agent_notifications.c.event_type.in_(["validation_alert", "review_request"])
+        ).order_by(agent_notifications.c.created_at.asc())
+        
+        rows = await database.fetch_all(query)
+        print(f"Loaded {len(rows)} notifications from database.")
+        assert len(rows) == 2, f"Expected 2 events, got {len(rows)}"
+        
+        event1 = json.loads(rows[0]["payload"])
+        event2 = json.loads(rows[1]["payload"])
+        
+        assert event1["type"] == "validation_alert", "First event type incorrect"
+        assert event2["type"] == "review_request", "Second event type incorrect"
+        assert "actions" in event2, "Review request event is missing actions URL"
+        assert "approve_url" in event2["actions"], "Review request is missing approve_url"
+        
+        print("First event type: " + event1["type"])
+        print("Second event type: " + event2["type"])
+        print("Approve URL: " + event2["actions"]["approve_url"])
+        
+        # 5. Clean up
+        print("Cleaning up test notifications...")
+        await database.execute(
+            agent_notifications.delete().where(
+                agent_notifications.c.event_type.in_(["validation_alert", "review_request"])
+            )
+        )
+        
+        print("All local agent bridge database tests completed successfully!")
+        
+    except Exception as err:
+        print(f"Error validating database agent bridge: {err}")
+        sys.exit(1)
+    finally:
+        await database.disconnect()
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ````
 
 ## File: backend/scripts/test_email.py
@@ -1297,6 +1392,53 @@ To learn more about Next.js, check out the [Next.js Documentation](https://nextj
   ],
   "exclude": ["node_modules"]
 }
+````
+
+## File: studio-newsletter-herald/scripts/seed.ts
+````typescript
+import {getCliClient} from 'sanity/cli'
+import * as fs from 'fs'
+import * as path from 'path'
+
+async function seed() {
+  const client = getCliClient({apiVersion: '2025-08-30'})
+  console.log('Seeding dataset using Sanity CLI client...')
+
+  const ndjsonPath = path.resolve(__dirname, '../seeds/sample-seed.ndjson')
+  const content = fs.readFileSync(ndjsonPath, 'utf8')
+  const lines = content.trim().split('\n').filter(Boolean)
+
+  const transaction = client.transaction()
+  for (const line of lines) {
+    const doc = JSON.parse(line)
+    console.log(`Queuing document: ${doc._type} (${doc._id})`)
+    transaction.createOrReplace(doc)
+  }
+
+  console.log('Committing transaction to Sanity Content Lake...')
+  const result = await transaction.commit()
+  console.log(`Successfully committed ${result.documentIds.length} documents!`)
+  for (const id of result.documentIds) {
+    console.log(` - ${id}`)
+  }
+}
+
+seed().catch((err) => {
+  console.error('Failed to seed dataset:', err)
+  process.exit(1)
+})
+````
+
+## File: studio-newsletter-herald/seeds/sample-seed.ndjson
+````
+{"_id":"theme-stewardship","_type":"theme","name":"Stewardship","description":"Responsible care, sharing of time, talent, and parish financial resources for God's kingdom.","category":"stewardship"}
+{"_id":"theme-service","_type":"theme","name":"Service","description":"Active Christian ministry, outreach, and assistance to parishioners and the wider community.","category":"service"}
+{"_id":"theme-community","_type":"theme","name":"Community","description":"Fostering parish fellowship, unity, and shared fraternal life across parish ministries.","category":"community"}
+{"_id":"theme-care-for-the-poor","_type":"theme","name":"Care for the Poor","description":"Charitable outreach, St. Vincent de Paul pantry support, and direct aid to vulnerable families.","category":"service"}
+{"_id":"theme-prayer","_type":"theme","name":"Prayer","description":"Personal and communal devotions, Eucharistic adoration, Scripture study, and liturgical prayer.","category":"spiritual"}
+{"_id":"sample-edition-2026-09-27","_type":"newsletterEdition","title":"26th Sunday in Ordinary Time – A Call to Faithful Compassion & Stewardship","slug":{"_type":"slug","current":"2026-09-27-26th-sunday-ordinary-time"},"sourceDocumentUrl":"https://example.org/sample-bulletins/holy-trinity-bulletin-sample-2026-09-27.pdf","sourceFilename":"holy_trinity_sample_bulletin_2026-09-27.pdf","publicationDate":"2026-09-25","targetSunday":"2026-09-27","liturgicalOccasion":"26th Sunday in Ordinary Time","liturgicalSeason":"Ordinary Time","liturgicalYear":"Year B","primaryTheme":{"_type":"reference","_ref":"theme-care-for-the-poor"},"supportingThemes":[{"_key":"st1","_type":"reference","_ref":"theme-stewardship"},{"_key":"st2","_type":"reference","_ref":"theme-community"},{"_key":"st3","_type":"reference","_ref":"theme-service"}],"summary":"In this week's reflection for the Twenty-Sixth Sunday in Ordinary Time, Holy Trinity Parish calls our community to open our hearts and hands in renewed compassion for those who are struggling. Drawing upon the Sunday readings, we are reminded that genuine Christian discipleship is expressed through attentive love for the marginalized and faithful stewardship of the gifts entrusted to us. As a parish family, we are invited to reflect on how our everyday choices can bring Christ's solace and hope to our neighbours in need.\n\nKey parish announcements highlight upcoming ministry initiatives across Holy Trinity and our SALLTO pastoral cluster. The Society of St. Vincent de Paul will be conducting their monthly food collection this weekend, and volunteers are warmly welcomed for the community soup kitchen. Additionally, registration remains open for the upcoming sacramental preparation programs and the parish ministry fair scheduled after all morning Masses.","status":"awaiting_review","validation":{"dateValid":true,"confidence":0.95,"checks":["Target Sunday date matches liturgical calendar for 26th Sunday in Ordinary Time","PDF text successfully extracted from source document","Identified primary pastoral theme and supporting ministries","Generated two-paragraph parish newsletter summary"]},"aiGenerated":true,"aiModel":"sample-herald-editor","createdAt":"2026-09-25T14:30:00.000Z","updatedAt":"2026-09-25T14:32:00.000Z"}
+{"_id":"workflow-sample-edition-2026-09-27","_type":"editorialWorkflow","newsletter":{"_type":"reference","_ref":"sample-edition-2026-09-27"},"currentStage":"awaiting_review","assignedAgent":"herald-ai","decision":"pending","history":[{"_key":"h1","stage":"received","actor":"system","note":"Sample Holy Trinity bulletin PDF received via ingestion channel.","timestamp":"2026-09-25T14:30:00.000Z"},{"_key":"h2","stage":"processing","actor":"herald-ai","note":"Text extracted; validating target Sunday against 2026 liturgical calendar.","timestamp":"2026-09-25T14:30:45.000Z"},{"_key":"h3","stage":"draft","actor":"herald-ai","note":"Editorial draft generated with themes (Care for the Poor, Stewardship, Community) and 2-paragraph summary.","timestamp":"2026-09-25T14:31:30.000Z"},{"_key":"h4","stage":"awaiting_review","actor":"herald-ai","note":"Pre-flight checks passed (confidence 0.95). Handed off to human editor for review and approval.","timestamp":"2026-09-25T14:32:00.000Z"}]}
+{"_id":"delivery-sample-edition-2026-09-27","_type":"delivery","newsletter":{"_type":"reference","_ref":"sample-edition-2026-09-27"},"status":"pending","scheduledFor":"2026-09-27T12:00:00.000Z","deliveryStats":{"recipientCount":0,"deliveredCount":0,"failedCount":0,"lastUpdatedAt":"2026-09-25T14:32:00.000Z"}}
 ````
 
 ## File: LICENSE
@@ -2722,97 +2864,6 @@ if __name__ == "__main__":
     asyncio.run(run_benchmark())
 ````
 
-## File: backend/scripts/test_agent_bridge.py
-````python
-import sys
-import os
-import asyncio
-import json
-import datetime
-from sqlalchemy import select
-
-# Add backend directory to path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-from helpers.agent_bridge import notify_agent
-from db.setup import database
-from db.models import agent_notifications
-
-async def main():
-    print("Testing local agent bridge (Database Queue)...")
-    await database.connect()
-    
-    try:
-        # 1. Clean previous test notifications if any
-        print("Cleaning up old test notifications...")
-        await database.execute(
-            agent_notifications.delete().where(
-                agent_notifications.c.event_type.in_(["validation_alert", "review_request"])
-            )
-        )
-            
-        # 2. Add validation alert event
-        print("Inserting validation alert...")
-        await notify_agent("validation_alert", {
-            "newsletter_id": 999,
-            "filename": "invalid_newsletter.docx",
-            "target_sunday": datetime.date(2026, 5, 24),
-            "status": "failed_validation",
-            "error_message": "Date mismatch: Expected 2026-05-24 but found 2026-05-17"
-        })
-        
-        # 3. Add review request event
-        print("Inserting review request...")
-        await notify_agent("review_request", {
-            "newsletter_id": 1000,
-            "title": "4th Sunday of Easter Bulletin",
-            "summary": "This is a warm test summary of parish events. Join us for Sunday Mass and our parish fundraising bake sale this weekend.",
-            "target_sunday": datetime.date(2026, 5, 24),
-            "status": "draft"
-        })
-        
-        # 4. Verify database contents
-        print("Verifying agent notifications in DB...")
-        query = select(agent_notifications).where(
-            agent_notifications.c.event_type.in_(["validation_alert", "review_request"])
-        ).order_by(agent_notifications.c.created_at.asc())
-        
-        rows = await database.fetch_all(query)
-        print(f"Loaded {len(rows)} notifications from database.")
-        assert len(rows) == 2, f"Expected 2 events, got {len(rows)}"
-        
-        event1 = json.loads(rows[0]["payload"])
-        event2 = json.loads(rows[1]["payload"])
-        
-        assert event1["type"] == "validation_alert", "First event type incorrect"
-        assert event2["type"] == "review_request", "Second event type incorrect"
-        assert "actions" in event2, "Review request event is missing actions URL"
-        assert "approve_url" in event2["actions"], "Review request is missing approve_url"
-        
-        print("First event type: " + event1["type"])
-        print("Second event type: " + event2["type"])
-        print("Approve URL: " + event2["actions"]["approve_url"])
-        
-        # 5. Clean up
-        print("Cleaning up test notifications...")
-        await database.execute(
-            agent_notifications.delete().where(
-                agent_notifications.c.event_type.in_(["validation_alert", "review_request"])
-            )
-        )
-        
-        print("All local agent bridge database tests completed successfully!")
-        
-    except Exception as err:
-        print(f"Error validating database agent bridge: {err}")
-        sys.exit(1)
-    finally:
-        await database.disconnect()
-
-if __name__ == "__main__":
-    asyncio.run(main())
-````
-
 ## File: backend/scripts/test_pii_filtering.py
 ````python
 import sys
@@ -4050,398 +4101,6 @@ export const delivery = defineType({
       return {
         title: newsletterTitle ? `Delivery: ${newsletterTitle}` : 'Delivery Record',
         subtitle: `Status: ${status || 'pending'} • Scheduled: ${dateStr}`,
-      }
-    },
-  },
-})
-````
-
-## File: studio-newsletter-herald/schemaTypes/editorialWorkflow.ts
-````typescript
-import {defineType, defineField, defineArrayMember} from 'sanity'
-
-export const editorialWorkflow = defineType({
-  name: 'editorialWorkflow',
-  title: 'Editorial Workflow',
-  type: 'document',
-  fields: [
-    defineField({
-      name: 'newsletter',
-      title: 'Newsletter Edition',
-      description: 'The newsletter edition governed by this workflow',
-      type: 'reference',
-      to: [{type: 'newsletterEdition'}],
-      validation: (Rule) => Rule.required().error('Newsletter edition reference is required'),
-    }),
-    defineField({
-      name: 'currentStage',
-      title: 'Current Stage',
-      description: 'Current stage in the editorial governance pipeline',
-      type: 'string',
-      options: {
-        list: [
-          {title: 'Received', value: 'received'},
-          {title: 'Processing', value: 'processing'},
-          {title: 'Draft', value: 'draft'},
-          {title: 'Awaiting Review', value: 'awaiting_review'},
-          {title: 'Approved', value: 'approved'},
-          {title: 'Scheduled', value: 'scheduled'},
-          {title: 'Sent', value: 'sent'},
-        ],
-      },
-      initialValue: 'received',
-      validation: (Rule) =>
-        Rule.required()
-          .error('Current stage is required')
-          .custom((val) => {
-            const allowed = [
-              'received',
-              'processing',
-              'draft',
-              'awaiting_review',
-              'approved',
-              'scheduled',
-              'sent',
-            ]
-            return (
-              (val && allowed.includes(val as string)) ||
-              `Current stage must be one of: ${allowed.join(', ')}`
-            )
-          }),
-    }),
-    defineField({
-      name: 'assignedAgent',
-      title: 'Assigned Agent',
-      description: 'Identifier of the AI editorial agent handling automated tasks',
-      type: 'string',
-    }),
-    defineField({
-      name: 'reviewer',
-      title: 'Human Reviewer',
-      description: 'Name or email of the human editor reviewing the edition',
-      type: 'string',
-    }),
-    defineField({
-      name: 'decision',
-      title: 'Review Decision',
-      description: 'Human editorial gate decision',
-      type: 'string',
-      options: {
-        list: [
-          {title: 'Pending', value: 'pending'},
-          {title: 'Approved', value: 'approved'},
-          {title: 'Rejected', value: 'rejected'},
-        ],
-      },
-      initialValue: 'pending',
-      validation: (Rule) =>
-        Rule.custom((val) => {
-          if (!val) return true
-          const allowed = ['pending', 'approved', 'rejected']
-          return allowed.includes(val as string) || `Decision must be one of: ${allowed.join(', ')}`
-        }),
-    }),
-    defineField({
-      name: 'decisionAt',
-      title: 'Decision Timestamp',
-      description: 'Timestamp when the human review decision was executed',
-      type: 'datetime',
-    }),
-    defineField({
-      name: 'history',
-      title: 'Workflow History',
-      description: 'Immutable chronological audit trail of editorial stages and actions',
-      type: 'array',
-      of: [
-        defineArrayMember({
-          type: 'object',
-          name: 'workflowHistoryEntry',
-          title: 'Workflow History Entry',
-          fields: [
-            defineField({
-              name: 'stage',
-              title: 'Stage',
-              type: 'string',
-              validation: (Rule) => Rule.required().error('History stage is required'),
-            }),
-            defineField({
-              name: 'actor',
-              title: 'Actor',
-              description: 'Agent or user responsible for this state transition',
-              type: 'string',
-              validation: (Rule) => Rule.required().error('History actor is required'),
-            }),
-            defineField({
-              name: 'note',
-              title: 'Note',
-              description: 'Optional commentary or reason for state transition',
-              type: 'text',
-              rows: 2,
-            }),
-            defineField({
-              name: 'timestamp',
-              title: 'Timestamp',
-              type: 'datetime',
-              initialValue: () => new Date().toISOString(),
-              validation: (Rule) => Rule.required().error('History timestamp is required'),
-            }),
-          ],
-          preview: {
-            select: {
-              stage: 'stage',
-              actor: 'actor',
-              timestamp: 'timestamp',
-            },
-            prepare({stage, actor, timestamp}) {
-              const formattedDate = timestamp ? new Date(timestamp).toLocaleString() : ''
-              return {
-                title: `${stage || 'Unknown stage'} • ${actor || 'Unknown actor'}`,
-                subtitle: formattedDate,
-              }
-            },
-          },
-        }),
-      ],
-    }),
-  ],
-  preview: {
-    select: {
-      newsletterTitle: 'newsletter.title',
-      stage: 'currentStage',
-      decision: 'decision',
-    },
-    prepare({newsletterTitle, stage, decision}) {
-      return {
-        title: newsletterTitle ? `Workflow: ${newsletterTitle}` : 'Editorial Workflow',
-        subtitle: `Stage: ${stage || 'N/A'} • Decision: ${decision || 'pending'}`,
-      }
-    },
-  },
-})
-````
-
-## File: studio-newsletter-herald/schemaTypes/newsletterEdition.ts
-````typescript
-import {defineType, defineField, defineArrayMember} from 'sanity'
-
-export const newsletterEdition = defineType({
-  name: 'newsletterEdition',
-  title: 'Newsletter Edition',
-  type: 'document',
-  fields: [
-    defineField({
-      name: 'title',
-      title: 'Title',
-      description: 'Headline or liturgical title for this newsletter edition',
-      type: 'string',
-      validation: (Rule) => Rule.required().error('Title is required'),
-    }),
-    defineField({
-      name: 'slug',
-      title: 'Slug',
-      description: 'URL-friendly identifier derived from target Sunday or edition title',
-      type: 'slug',
-      options: {
-        source: (doc: Record<string, unknown>) =>
-          (doc.targetSunday as string) || (doc.title as string) || '',
-        maxLength: 96,
-      },
-      validation: (Rule) => Rule.required().error('Slug is required'),
-    }),
-    defineField({
-      name: 'sourceDocumentUrl',
-      title: 'Source Document URL',
-      description: 'Direct link to the original PDF or cloud storage document',
-      type: 'url',
-      validation: (Rule) =>
-        Rule.uri({
-          scheme: ['http', 'https'],
-        }),
-    }),
-    defineField({
-      name: 'sourceFilename',
-      title: 'Source Filename',
-      description: 'Original filename of the uploaded bulletin or newsletter PDF',
-      type: 'string',
-    }),
-    defineField({
-      name: 'publicationDate',
-      title: 'Publication Date',
-      description: 'Date the newsletter was originally published or issued',
-      type: 'date',
-      validation: (Rule) => Rule.required().error('Publication date is required'),
-    }),
-    defineField({
-      name: 'targetSunday',
-      title: 'Target Sunday',
-      description: 'The upcoming Sunday liturgical date this newsletter addresses',
-      type: 'date',
-      validation: (Rule) => Rule.required().error('Target Sunday is required'),
-    }),
-    defineField({
-      name: 'liturgicalOccasion',
-      title: 'Liturgical Occasion',
-      description: 'Specific liturgical feast or celebration (e.g. 26th Sunday in Ordinary Time)',
-      type: 'string',
-    }),
-    defineField({
-      name: 'liturgicalSeason',
-      title: 'Liturgical Season',
-      description: 'Church season (e.g. Ordinary Time, Advent, Christmas, Lent, Easter)',
-      type: 'string',
-    }),
-    defineField({
-      name: 'liturgicalYear',
-      title: 'Liturgical Year',
-      description: 'Liturgical reading cycle (e.g. Year A, Year B, Year C)',
-      type: 'string',
-    }),
-    defineField({
-      name: 'primaryTheme',
-      title: 'Primary Theme',
-      description: 'Core editorial theme linked to the Theme taxonomy',
-      type: 'reference',
-      to: [{type: 'theme'}],
-      validation: (Rule) => Rule.required().error('Primary theme reference is required'),
-    }),
-    defineField({
-      name: 'supportingThemes',
-      title: 'Supporting Themes',
-      description: 'Curated secondary themes linked from the Theme taxonomy',
-      type: 'array',
-      of: [
-        defineArrayMember({
-          type: 'reference',
-          to: [{type: 'theme'}],
-        }),
-      ],
-    }),
-    defineField({
-      name: 'summary',
-      title: 'Summary',
-      description: 'Structured two-paragraph editorial digest synthesized for parishioners',
-      type: 'text',
-      rows: 6,
-      validation: (Rule) => Rule.required().error('Summary is required'),
-    }),
-    defineField({
-      name: 'status',
-      title: 'Status',
-      description: 'Current editorial publication lifecycle status',
-      type: 'string',
-      options: {
-        list: [
-          {title: 'Draft', value: 'draft'},
-          {title: 'Awaiting Review', value: 'awaiting_review'},
-          {title: 'Approved', value: 'approved'},
-          {title: 'Scheduled', value: 'scheduled'},
-          {title: 'Sent', value: 'sent'},
-          {title: 'Rejected', value: 'rejected'},
-          {title: 'Failed', value: 'failed'},
-        ],
-      },
-      initialValue: 'draft',
-      validation: (Rule) =>
-        Rule.required()
-          .error('Status is required')
-          .custom((val) => {
-            const allowed = [
-              'draft',
-              'awaiting_review',
-              'approved',
-              'scheduled',
-              'sent',
-              'rejected',
-              'failed',
-            ]
-            return (
-              (val && allowed.includes(val as string)) ||
-              `Status must be one of: ${allowed.join(', ')}`
-            )
-          }),
-    }),
-    defineField({
-      name: 'validation',
-      title: 'Editorial Validation',
-      description: 'Pre-flight checks and confidence metrics assessed by the editorial agent',
-      type: 'object',
-      fields: [
-        defineField({
-          name: 'dateValid',
-          title: 'Date Validated',
-          description: 'Whether the target Sunday aligns with publication date and liturgical calendar',
-          type: 'boolean',
-        }),
-        defineField({
-          name: 'confidence',
-          title: 'Confidence Score',
-          description: 'Overall agent confidence in extraction and thematic alignment (0 to 1.0)',
-          type: 'number',
-          validation: (Rule) => Rule.min(0).max(1),
-        }),
-        defineField({
-          name: 'checks',
-          title: 'Validation Checklist',
-          description: 'Specific assertions passed or evaluated by the agent',
-          type: 'array',
-          of: [
-            defineArrayMember({
-              type: 'string',
-            }),
-          ],
-        }),
-      ],
-    }),
-    defineField({
-      name: 'aiGenerated',
-      title: 'AI Generated',
-      description: 'Indicates whether the initial draft and themes were prepared by an AI agent',
-      type: 'boolean',
-      initialValue: true,
-      validation: (Rule) => Rule.required().error('AI Generated flag is required'),
-    }),
-    defineField({
-      name: 'aiModel',
-      title: 'AI Model',
-      description: 'Model identifier used by the editorial agent (e.g. mistral-large, claude-3-5-sonnet)',
-      type: 'string',
-    }),
-    defineField({
-      name: 'createdAt',
-      title: 'Created At',
-      description: 'Timestamp when this edition was initially created',
-      type: 'datetime',
-      initialValue: () => new Date().toISOString(),
-      validation: (Rule) => Rule.required().error('Creation timestamp is required'),
-    }),
-    defineField({
-      name: 'updatedAt',
-      title: 'Updated At',
-      description: 'Timestamp when this edition was last modified',
-      type: 'datetime',
-      initialValue: () => new Date().toISOString(),
-      validation: (Rule) => Rule.required().error('Update timestamp is required'),
-    }),
-  ],
-  preview: {
-    select: {
-      title: 'title',
-      targetSunday: 'targetSunday',
-      status: 'status',
-      liturgicalOccasion: 'liturgicalOccasion',
-    },
-    prepare({title, targetSunday, status, liturgicalOccasion}) {
-      const statusLabel = status ? `[${status.replace(/_/g, ' ').toUpperCase()}]` : ''
-      const subtitle = [
-        liturgicalOccasion,
-        targetSunday ? `Sunday: ${targetSunday}` : '',
-        statusLabel,
-      ]
-        .filter(Boolean)
-        .join(' • ')
-      return {
-        title: title || 'Untitled Newsletter Edition',
-        subtitle,
       }
     },
   },
@@ -6114,6 +5773,170 @@ next-env.d.ts
 /.clerk/
 ````
 
+## File: studio-newsletter-herald/schemaTypes/editorialWorkflow.ts
+````typescript
+import {defineType, defineField, defineArrayMember} from 'sanity'
+
+export const editorialWorkflow = defineType({
+  name: 'editorialWorkflow',
+  title: 'Editorial Workflow',
+  type: 'document',
+  fields: [
+    defineField({
+      name: 'newsletter',
+      title: 'Newsletter Edition',
+      description: 'The newsletter edition governed by this workflow',
+      type: 'reference',
+      to: [{type: 'newsletterEdition'}],
+      validation: (Rule) => Rule.required().error('Newsletter edition reference is required'),
+    }),
+    defineField({
+      name: 'currentStage',
+      title: 'Current Stage',
+      description: 'Current stage in the editorial governance pipeline',
+      type: 'string',
+      options: {
+        list: [
+          {title: 'Received', value: 'received'},
+          {title: 'Processing', value: 'processing'},
+          {title: 'Draft', value: 'draft'},
+          {title: 'Awaiting Review', value: 'awaiting_review'},
+          {title: 'Approved', value: 'approved'},
+          {title: 'Scheduled', value: 'scheduled'},
+          {title: 'Sent', value: 'sent'},
+        ],
+      },
+      initialValue: 'received',
+      validation: (Rule) =>
+        Rule.required()
+          .error('Current stage is required')
+          .custom((val) => {
+            const allowed = [
+              'received',
+              'processing',
+              'draft',
+              'awaiting_review',
+              'approved',
+              'scheduled',
+              'sent',
+            ]
+            return (
+              (val && allowed.includes(val as string)) ||
+              `Current stage must be one of: ${allowed.join(', ')}`
+            )
+          }),
+    }),
+    defineField({
+      name: 'assignedAgent',
+      title: 'Assigned Agent',
+      description: 'Identifier of the AI editorial agent handling automated tasks',
+      type: 'string',
+    }),
+    defineField({
+      name: 'reviewer',
+      title: 'Human Reviewer',
+      description: 'Name or email of the human editor reviewing the edition',
+      type: 'string',
+    }),
+    defineField({
+      name: 'decision',
+      title: 'Review Decision',
+      description: 'Human editorial gate decision',
+      type: 'string',
+      options: {
+        list: [
+          {title: 'Pending', value: 'pending'},
+          {title: 'Approved', value: 'approved'},
+          {title: 'Rejected', value: 'rejected'},
+        ],
+      },
+      initialValue: 'pending',
+      validation: (Rule) =>
+        Rule.custom((val) => {
+          if (!val) return true
+          const allowed = ['pending', 'approved', 'rejected']
+          return allowed.includes(val as string) || `Decision must be one of: ${allowed.join(', ')}`
+        }),
+    }),
+    defineField({
+      name: 'decisionAt',
+      title: 'Decision Timestamp',
+      description: 'Timestamp when the human review decision was executed',
+      type: 'datetime',
+    }),
+    defineField({
+      name: 'history',
+      title: 'Workflow History',
+      description: 'Immutable chronological audit trail of editorial stages and actions',
+      type: 'array',
+      of: [
+        defineArrayMember({
+          type: 'object',
+          name: 'workflowHistoryEntry',
+          title: 'Workflow History Entry',
+          fields: [
+            defineField({
+              name: 'stage',
+              title: 'Stage',
+              type: 'string',
+              validation: (Rule) => Rule.required().error('History stage is required'),
+            }),
+            defineField({
+              name: 'actor',
+              title: 'Actor',
+              description: 'Agent or user responsible for this state transition',
+              type: 'string',
+              validation: (Rule) => Rule.required().error('History actor is required'),
+            }),
+            defineField({
+              name: 'note',
+              title: 'Note',
+              description: 'Optional commentary or reason for state transition',
+              type: 'text',
+              rows: 2,
+            }),
+            defineField({
+              name: 'timestamp',
+              title: 'Timestamp',
+              type: 'datetime',
+              initialValue: () => new Date().toISOString(),
+              validation: (Rule) => Rule.required().error('History timestamp is required'),
+            }),
+          ],
+          preview: {
+            select: {
+              stage: 'stage',
+              actor: 'actor',
+              timestamp: 'timestamp',
+            },
+            prepare({stage, actor, timestamp}) {
+              const formattedDate = timestamp ? new Date(timestamp).toLocaleString() : ''
+              return {
+                title: `${stage || 'Unknown stage'} • ${actor || 'Unknown actor'}`,
+                subtitle: formattedDate,
+              }
+            },
+          },
+        }),
+      ],
+    }),
+  ],
+  preview: {
+    select: {
+      newsletterTitle: 'newsletter.title',
+      stage: 'currentStage',
+      decision: 'decision',
+    },
+    prepare({newsletterTitle, stage, decision}) {
+      return {
+        title: newsletterTitle ? `Workflow: ${newsletterTitle}` : 'Editorial Workflow',
+        subtitle: `Stage: ${stage || 'N/A'} • Decision: ${decision || 'pending'}`,
+      }
+    },
+  },
+})
+````
+
 ## File: studio-newsletter-herald/schemaTypes/index.ts
 ````typescript
 import {newsletterEdition} from './newsletterEdition'
@@ -6127,6 +5950,234 @@ export const schemaTypes = [
   editorialWorkflow,
   delivery,
 ]
+````
+
+## File: studio-newsletter-herald/schemaTypes/newsletterEdition.ts
+````typescript
+import {defineType, defineField, defineArrayMember} from 'sanity'
+
+export const newsletterEdition = defineType({
+  name: 'newsletterEdition',
+  title: 'Newsletter Edition',
+  type: 'document',
+  fields: [
+    defineField({
+      name: 'title',
+      title: 'Title',
+      description: 'Headline or liturgical title for this newsletter edition',
+      type: 'string',
+      validation: (Rule) => Rule.required().error('Title is required'),
+    }),
+    defineField({
+      name: 'slug',
+      title: 'Slug',
+      description: 'URL-friendly identifier derived from target Sunday or edition title',
+      type: 'slug',
+      options: {
+        source: (doc: Record<string, unknown>) =>
+          (doc.targetSunday as string) || (doc.title as string) || '',
+        maxLength: 96,
+      },
+      validation: (Rule) => Rule.required().error('Slug is required'),
+    }),
+    defineField({
+      name: 'sourceDocumentUrl',
+      title: 'Source Document URL',
+      description: 'Direct link to the original PDF or cloud storage document',
+      type: 'url',
+      validation: (Rule) =>
+        Rule.uri({
+          scheme: ['http', 'https'],
+        }),
+    }),
+    defineField({
+      name: 'sourceFilename',
+      title: 'Source Filename',
+      description: 'Original filename of the uploaded bulletin or newsletter PDF',
+      type: 'string',
+    }),
+    defineField({
+      name: 'publicationDate',
+      title: 'Publication Date',
+      description: 'Date the newsletter was originally published or issued',
+      type: 'date',
+      validation: (Rule) => Rule.required().error('Publication date is required'),
+    }),
+    defineField({
+      name: 'targetSunday',
+      title: 'Target Sunday',
+      description: 'The upcoming Sunday liturgical date this newsletter addresses',
+      type: 'date',
+      validation: (Rule) => Rule.required().error('Target Sunday is required'),
+    }),
+    defineField({
+      name: 'liturgicalOccasion',
+      title: 'Liturgical Occasion',
+      description: 'Specific liturgical feast or celebration (e.g. 26th Sunday in Ordinary Time)',
+      type: 'string',
+    }),
+    defineField({
+      name: 'liturgicalSeason',
+      title: 'Liturgical Season',
+      description: 'Church season (e.g. Ordinary Time, Advent, Christmas, Lent, Easter)',
+      type: 'string',
+    }),
+    defineField({
+      name: 'liturgicalYear',
+      title: 'Liturgical Year',
+      description: 'Liturgical reading cycle (e.g. Year A, Year B, Year C)',
+      type: 'string',
+    }),
+    defineField({
+      name: 'primaryTheme',
+      title: 'Primary Theme',
+      description: 'Core editorial theme linked to the Theme taxonomy',
+      type: 'reference',
+      to: [{type: 'theme'}],
+      validation: (Rule) => Rule.required().error('Primary theme reference is required'),
+    }),
+    defineField({
+      name: 'supportingThemes',
+      title: 'Supporting Themes',
+      description: 'Curated secondary themes linked from the Theme taxonomy',
+      type: 'array',
+      of: [
+        defineArrayMember({
+          type: 'reference',
+          to: [{type: 'theme'}],
+        }),
+      ],
+    }),
+    defineField({
+      name: 'summary',
+      title: 'Summary',
+      description: 'Structured two-paragraph editorial digest synthesized for parishioners',
+      type: 'text',
+      rows: 6,
+      validation: (Rule) => Rule.required().error('Summary is required'),
+    }),
+    defineField({
+      name: 'status',
+      title: 'Status',
+      description: 'Current editorial publication lifecycle status',
+      type: 'string',
+      options: {
+        list: [
+          {title: 'Draft', value: 'draft'},
+          {title: 'Awaiting Review', value: 'awaiting_review'},
+          {title: 'Approved', value: 'approved'},
+          {title: 'Scheduled', value: 'scheduled'},
+          {title: 'Sent', value: 'sent'},
+          {title: 'Rejected', value: 'rejected'},
+          {title: 'Failed', value: 'failed'},
+        ],
+      },
+      initialValue: 'draft',
+      validation: (Rule) =>
+        Rule.required()
+          .error('Status is required')
+          .custom((val) => {
+            const allowed = [
+              'draft',
+              'awaiting_review',
+              'approved',
+              'scheduled',
+              'sent',
+              'rejected',
+              'failed',
+            ]
+            return (
+              (val && allowed.includes(val as string)) ||
+              `Status must be one of: ${allowed.join(', ')}`
+            )
+          }),
+    }),
+    defineField({
+      name: 'validation',
+      title: 'Editorial Validation',
+      description: 'Pre-flight checks and confidence metrics assessed by the editorial agent',
+      type: 'object',
+      fields: [
+        defineField({
+          name: 'dateValid',
+          title: 'Date Validated',
+          description: 'Whether the target Sunday aligns with publication date and liturgical calendar',
+          type: 'boolean',
+        }),
+        defineField({
+          name: 'confidence',
+          title: 'Confidence Score',
+          description: 'Overall agent confidence in extraction and thematic alignment (0 to 1.0)',
+          type: 'number',
+          validation: (Rule) => Rule.min(0).max(1),
+        }),
+        defineField({
+          name: 'checks',
+          title: 'Validation Checklist',
+          description: 'Specific assertions passed or evaluated by the agent',
+          type: 'array',
+          of: [
+            defineArrayMember({
+              type: 'string',
+            }),
+          ],
+        }),
+      ],
+    }),
+    defineField({
+      name: 'aiGenerated',
+      title: 'AI Generated',
+      description: 'Indicates whether the initial draft and themes were prepared by an AI agent',
+      type: 'boolean',
+      initialValue: true,
+      validation: (Rule) => Rule.required().error('AI Generated flag is required'),
+    }),
+    defineField({
+      name: 'aiModel',
+      title: 'AI Model',
+      description: 'Model identifier used by the editorial agent (e.g. mistral-large, claude-3-5-sonnet)',
+      type: 'string',
+    }),
+    defineField({
+      name: 'createdAt',
+      title: 'Created At',
+      description: 'Timestamp when this edition was initially created',
+      type: 'datetime',
+      initialValue: () => new Date().toISOString(),
+      validation: (Rule) => Rule.required().error('Creation timestamp is required'),
+    }),
+    defineField({
+      name: 'updatedAt',
+      title: 'Updated At',
+      description: 'Timestamp when this edition was last modified',
+      type: 'datetime',
+      initialValue: () => new Date().toISOString(),
+      validation: (Rule) => Rule.required().error('Update timestamp is required'),
+    }),
+  ],
+  preview: {
+    select: {
+      title: 'title',
+      targetSunday: 'targetSunday',
+      status: 'status',
+      liturgicalOccasion: 'liturgicalOccasion',
+    },
+    prepare({title, targetSunday, status, liturgicalOccasion}) {
+      const statusLabel = status ? `[${status.replace(/_/g, ' ').toUpperCase()}]` : ''
+      const subtitle = [
+        liturgicalOccasion,
+        targetSunday ? `Sunday: ${targetSunday}` : '',
+        statusLabel,
+      ]
+        .filter(Boolean)
+        .join(' • ')
+      return {
+        title: title || 'Untitled Newsletter Edition',
+        subtitle,
+      }
+    },
+  },
+})
 ````
 
 ## File: .python-version
