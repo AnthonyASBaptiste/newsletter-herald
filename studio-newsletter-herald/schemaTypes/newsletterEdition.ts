@@ -13,6 +13,18 @@ export const newsletterEdition = defineType({
       validation: (Rule) => Rule.required().error('Title is required'),
     }),
     defineField({
+      name: 'slug',
+      title: 'Slug',
+      description: 'URL-friendly identifier derived from target Sunday or edition title',
+      type: 'slug',
+      options: {
+        source: (doc: Record<string, unknown>) =>
+          (doc.targetSunday as string) || (doc.title as string) || '',
+        maxLength: 96,
+      },
+      validation: (Rule) => Rule.required().error('Slug is required'),
+    }),
+    defineField({
       name: 'sourceDocumentUrl',
       title: 'Source Document URL',
       description: 'Direct link to the original PDF or cloud storage document',
@@ -63,9 +75,10 @@ export const newsletterEdition = defineType({
     defineField({
       name: 'primaryTheme',
       title: 'Primary Theme',
-      description: 'Core editorial theme identified by the editorial agent or editor',
-      type: 'string',
-      validation: (Rule) => Rule.required().error('Primary theme is required'),
+      description: 'Core editorial theme linked to the Theme taxonomy',
+      type: 'reference',
+      to: [{type: 'theme'}],
+      validation: (Rule) => Rule.required().error('Primary theme reference is required'),
     }),
     defineField({
       name: 'supportingThemes',
@@ -124,18 +137,36 @@ export const newsletterEdition = defineType({
           }),
     }),
     defineField({
-      name: 'workflow',
-      title: 'Editorial Workflow',
-      description: 'Associated workflow record tracking stages and human approval history',
-      type: 'reference',
-      to: [{type: 'editorialWorkflow'}],
-    }),
-    defineField({
-      name: 'delivery',
-      title: 'Delivery Schedule',
-      description: 'Associated email dispatch schedule and transmission statistics',
-      type: 'reference',
-      to: [{type: 'delivery'}],
+      name: 'validation',
+      title: 'Editorial Validation',
+      description: 'Pre-flight checks and confidence metrics assessed by the editorial agent',
+      type: 'object',
+      fields: [
+        defineField({
+          name: 'dateValid',
+          title: 'Date Validated',
+          description: 'Whether the target Sunday aligns with publication date and liturgical calendar',
+          type: 'boolean',
+        }),
+        defineField({
+          name: 'confidence',
+          title: 'Confidence Score',
+          description: 'Overall agent confidence in extraction and thematic alignment (0 to 1.0)',
+          type: 'number',
+          validation: (Rule) => Rule.min(0).max(1),
+        }),
+        defineField({
+          name: 'checks',
+          title: 'Validation Checklist',
+          description: 'Specific assertions passed or evaluated by the agent',
+          type: 'array',
+          of: [
+            defineArrayMember({
+              type: 'string',
+            }),
+          ],
+        }),
+      ],
     }),
     defineField({
       name: 'aiGenerated',

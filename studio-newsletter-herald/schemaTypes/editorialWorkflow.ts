@@ -88,12 +88,6 @@ export const editorialWorkflow = defineType({
       type: 'datetime',
     }),
     defineField({
-      name: 'scheduledFor',
-      title: 'Scheduled For',
-      description: 'Target delivery datetime set upon approval',
-      type: 'datetime',
-    }),
-    defineField({
       name: 'history',
       title: 'Workflow History',
       description: 'Immutable chronological audit trail of editorial stages and actions',
