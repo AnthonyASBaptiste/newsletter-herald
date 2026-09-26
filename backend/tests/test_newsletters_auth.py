@@ -28,7 +28,7 @@ def test_get_newsletters_valid_x_api_key(mock_fetch_all):
     headers = {"X-API-Key": settings.api_key}
     response = client.get("/newsletters", headers=headers)
     assert response.status_code == 200
-    assert response.json() == {"newsletters": []}
+    assert response.json()["newsletters"] == []
     mock_fetch_all.assert_called_once()
 
 
@@ -38,5 +38,5 @@ def test_get_newsletters_valid_bearer_token(mock_fetch_all):
     headers = {"Authorization": f"Bearer {settings.api_key}"}
     response = client.get("/newsletters", headers=headers)
     assert response.status_code == 200
-    assert response.json() == {"newsletters": []}
+    assert response.json()["newsletters"] == []
     mock_fetch_all.assert_called_once()

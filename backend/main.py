@@ -309,31 +309,63 @@ async def upload_summary(
                 f"Summary generated and stored successfully (Newsletter ID: {newsletter_id}, Summary ID: {summary_id})"
             )
 
-            # Bridge structured editorial edition and workflow into Sanity
+            # Bridge structured editorial edition, workflow, and delivery into Sanity
             sanity_result = None
+            sanity_error = None
             try:
-                from helpers.sanity_client import sync_to_sanity
-                sanity_result = await run_in_threadpool(
-                    sync_to_sanity,
-                    newsletter_id=newsletter_id,
-                    filename=standard_filename,
-                    drive_web_view_link=web_view_link,
-                    target_sunday=target_sunday,
-                    schedule_date_val=schedule_date_val,
-                    summary_data=summary,
-                    is_valid=is_valid,
-                    error_msg=error_msg,
-                    uploader=uploader,
+                from helpers.sanity_editorial import create_sanity_editorial_documents
+                editorial_payload = {
+                    "newsletter_id": newsletter_id,
+                    "title": summary["title"],
+                    "summary": summary["summary"],
+                    "target_sunday": target_sunday,
+                    "publication_date": schedule_date_val or target_sunday,
+                    "liturgical_occasion": summary.get("liturgical_occasion") or f"Sunday Bulletin - {target_sunday}",
+                    "liturgical_season": summary.get("liturgical_season"),
+                    "liturgical_year": summary.get("liturgical_year"),
+                    "primary_theme": summary.get("primary_theme") or summary.get("theme") or "Community & Fellowship",
+                    "supporting_themes": summary.get("supporting_themes") or (["Liturgy & Sacraments"] if summary.get("liturgical_season") else []),
+                    "ai_generated": True,
+                    "ai_model": summary.get("model"),
+                    "source_filename": standard_filename,
+                    "source_document_url": web_view_link,
+                    "uploader": uploader,
+                }
+                sanity_doc_ids = await run_in_threadpool(
+                    create_sanity_editorial_documents,
+                    editorial_payload,
                 )
-                logger.info(f"Sanity editorial sync completed: {sanity_result}")
+                sanity_result = {
+                    "synced": True,
+                    "status": "awaiting_review",
+                    "newsletterId": sanity_doc_ids.get("newsletterId"),
+                    "workflowId": sanity_doc_ids.get("workflowId"),
+                    "deliveryId": sanity_doc_ids.get("deliveryId"),
+                    "edition_id": sanity_doc_ids.get("newsletterId"),
+                    "workflow_id": sanity_doc_ids.get("workflowId"),
+                    "delivery_id": sanity_doc_ids.get("deliveryId"),
+                }
+                logger.info(f"Sanity editorial creation completed: {sanity_result}")
             except Exception as sanity_err:
-                logger.error(f"Sanity editorial sync failed (non-fatal): {sanity_err}")
+                sanity_error = str(sanity_err)
+                logger.error(
+                    f"Sanity editorial synchronization failed for newsletter {newsletter_id}: {sanity_err}",
+                    exc_info=True,
+                )
+                sanity_result = {
+                    "synced": False,
+                    "status": "sync_failed",
+                    "error": sanity_error,
+                    "retry_url": f"/newsletters/{newsletter_id}/sync-sanity",
+                }
 
-            if sanity_result:
-                summary["sanity_edition_id"] = sanity_result.get("edition_id")
-                summary["sanity_workflow_id"] = sanity_result.get("workflow_id")
-                summary["sanity_synced"] = sanity_result.get("synced", False)
-                summary["sanity_status"] = sanity_result.get("status")
+            summary["sanity_synced"] = sanity_result.get("synced", False)
+            summary["sanity_status"] = sanity_result.get("status")
+            summary["sanity_edition_id"] = sanity_result.get("newsletterId")
+            summary["sanity_workflow_id"] = sanity_result.get("workflowId")
+            summary["sanity_delivery_id"] = sanity_result.get("deliveryId")
+            if not sanity_result.get("synced"):
+                summary["sanity_error"] = sanity_error
 
             # Add drive info to response
             summary["newsletter_id"] = newsletter_id
@@ -341,7 +373,9 @@ async def upload_summary(
             summary["drive_file_id"] = drive_file_id
             summary["drive_web_view_link"] = web_view_link
             summary["status"] = status
-            summary["target_sunday"] = target_sunday.isoformat()
+            summary["target_sunday"] = (
+                target_sunday.isoformat() if hasattr(target_sunday, "isoformat") else str(target_sunday)
+            )
 
             # Handle Eval/Demo Mode (Immediate Preview Dispatch)
             demo_mode_header = request.headers.get("x-demo-mode", "false").lower() == "true"
@@ -406,21 +440,8 @@ async def upload_summary(
             summary["demo_sent"] = demo_sent
             summary["demo_recipient"] = demo_recipient
 
-            # Notify local agent of the review request or validation failure
-            if is_valid:
-                await notify_agent(
-                    "review_request",
-                    {
-                        "newsletter_id": newsletter_id,
-                        "title": summary["title"],
-                        "summary": summary["summary"],
-                        "target_sunday": target_sunday,
-                        "status": status,
-                        "sanity_edition_id": summary.get("sanity_edition_id"),
-                        "sanity_workflow_id": summary.get("sanity_workflow_id"),
-                    },
-                )
-            else:
+            # Notify local agent of review request, sanity failure, or validation failure
+            if not is_valid:
                 await notify_agent(
                     "validation_alert",
                     {
@@ -431,25 +452,65 @@ async def upload_summary(
                         "error_message": error_msg,
                     },
                 )
+            elif not sanity_result.get("synced"):
+                await notify_agent(
+                    "sanity_sync_failed",
+                    {
+                        "newsletter_id": newsletter_id,
+                        "title": summary["title"],
+                        "target_sunday": target_sunday,
+                        "status": status,
+                        "error_message": sanity_error,
+                        "filename": standard_filename,
+                    },
+                )
+            else:
+                await notify_agent(
+                    "review_request",
+                    {
+                        "newsletter_id": newsletter_id,
+                        "title": summary["title"],
+                        "summary": summary["summary"],
+                        "target_sunday": target_sunday,
+                        "status": status,
+                        "sanity_edition_id": summary.get("sanity_edition_id"),
+                        "sanity_workflow_id": summary.get("sanity_workflow_id"),
+                        "sanity_delivery_id": summary.get("sanity_delivery_id"),
+                    },
+                )
         except Exception as e:
             logger.error(f"LLM error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
-        # Log success
+        # Log upload status in database
+        upload_status = "success" if (sanity_result and sanity_result.get("synced")) else "partial_success"
+        upload_err_msg = None if (sanity_result and sanity_result.get("synced")) else f"Sanity sync failed: {sanity_error}"
         await database.execute(
             upload_logs.insert().values(
-                filename=filename, uploader=uploader, status="success"
+                filename=filename,
+                uploader=uploader,
+                status=upload_status,
+                error_message=upload_err_msg,
             )
         )
 
+        target_sunday_iso = (
+            target_sunday.isoformat()
+            if hasattr(target_sunday, "isoformat")
+            else str(target_sunday)
+        )
         resp_payload = {
             "summary": summary,
             "validation": {
                 "is_valid": is_valid,
-                "target_sunday": target_sunday.isoformat(),
+                "target_sunday": target_sunday_iso,
                 "error_message": error_msg,
             },
-            "detail": "Newsletter uploaded and summary generated successfully.",
+            "detail": (
+                "Newsletter uploaded and summary generated successfully."
+                if (sanity_result and sanity_result.get("synced"))
+                else f"Newsletter uploaded and Herald records persisted, but Sanity sync failed: {sanity_error}"
+            ),
         }
         if sanity_result:
             resp_payload["sanity"] = sanity_result
@@ -853,19 +914,37 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
         # 5b. Sync regenerated edition to Sanity
         sanity_result = None
         try:
-            from helpers.sanity_client import sync_to_sanity
-            sanity_result = await run_in_threadpool(
-                sync_to_sanity,
-                newsletter_id=newsletter_id,
-                filename=filename,
-                drive_web_view_link=newsletter["drive_web_view_link"],
-                target_sunday=newsletter["target_sunday"],
-                schedule_date_val=newsletter["schedule_date"],
-                summary_data=summary_data,
-                is_valid=(newsletter["status"] != "failed_validation"),
-                error_msg="",
-                uploader=newsletter["uploader"] or "system",
+            from helpers.sanity_editorial import create_sanity_editorial_documents
+            editorial_payload = {
+                "newsletter_id": newsletter_id,
+                "title": summary_data["title"],
+                "summary": summary_data["summary"],
+                "target_sunday": newsletter["target_sunday"],
+                "publication_date": newsletter["schedule_date"] or newsletter["target_sunday"],
+                "liturgical_occasion": summary_data.get("liturgical_occasion") or f"Sunday Bulletin - {newsletter['target_sunday']}",
+                "liturgical_season": summary_data.get("liturgical_season"),
+                "liturgical_year": summary_data.get("liturgical_year"),
+                "primary_theme": summary_data.get("primary_theme") or "Community & Fellowship",
+                "supporting_themes": summary_data.get("supporting_themes") or (["Liturgy & Sacraments"] if summary_data.get("liturgical_season") else []),
+                "ai_generated": True,
+                "ai_model": summary_data.get("model"),
+                "source_filename": filename,
+                "source_document_url": newsletter["drive_web_view_link"],
+                "uploader": newsletter["uploader"] or "system",
+            }
+            sanity_doc_ids = await run_in_threadpool(
+                create_sanity_editorial_documents,
+                editorial_payload,
             )
+            sanity_result = {
+                "synced": True,
+                "edition_id": sanity_doc_ids.get("newsletterId"),
+                "workflow_id": sanity_doc_ids.get("workflowId"),
+                "delivery_id": sanity_doc_ids.get("deliveryId"),
+                "newsletterId": sanity_doc_ids.get("newsletterId"),
+                "workflowId": sanity_doc_ids.get("workflowId"),
+                "deliveryId": sanity_doc_ids.get("deliveryId"),
+            }
             logger.info(f"Sanity regenerated sync completed: {sanity_result}")
         except Exception as sanity_err:
             logger.error(f"Sanity regenerated sync failed (non-fatal): {sanity_err}")
@@ -881,6 +960,7 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
                 "status": newsletter["status"],
                 "sanity_edition_id": sanity_result.get("edition_id") if sanity_result else None,
                 "sanity_workflow_id": sanity_result.get("workflow_id") if sanity_result else None,
+                "sanity_delivery_id": sanity_result.get("delivery_id") if sanity_result else None,
             },
         )
 
@@ -1400,4 +1480,124 @@ async def archive_newsletter(
     except Exception as e:
         logger.error(f"Error archiving newsletter {newsletter_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/newsletters/{newsletter_id}/sync-sanity")
+async def retry_sanity_sync(
+    newsletter_id: int, _: None = Depends(verify_api_key)
+) -> JSONResponse:
+    """
+    Retries Sanity synchronization for an existing Herald newsletter
+    WITHOUT making a new AI/LLM call.
+    Uses already-persisted Herald editorial records and guarantees idempotency.
+    """
+    logger.info(f"Retrying Sanity editorial sync for newsletter {newsletter_id}")
+    try:
+        # 1. Fetch newsletter record from PostgreSQL
+        query = select(newsletters).where(newsletters.c.id == newsletter_id)
+        newsletter = await database.fetch_one(query)
+        if not newsletter:
+            raise HTTPException(status_code=404, detail=f"Newsletter {newsletter_id} not found")
+
+        # 2. Fetch existing summary record from PostgreSQL
+        sum_query = select(summaries).where(summaries.c.newsletter_id == newsletter_id)
+        summary_row = await database.fetch_one(sum_query)
+        if not summary_row:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No summary found for newsletter {newsletter_id}",
+            )
+
+        # 3. Construct editorial payload from existing PostgreSQL data without LLM call
+        target_sunday = newsletter["target_sunday"]
+        schedule_date_val = newsletter["schedule_date"]
+        tags = newsletter["tags"] or ""
+
+        from helpers.sanity_editorial import create_sanity_editorial_documents
+
+        editorial_payload = {
+            "newsletter_id": newsletter_id,
+            "title": summary_row["title"],
+            "summary": summary_row["summary"],
+            "target_sunday": target_sunday,
+            "publication_date": schedule_date_val or target_sunday,
+            "liturgical_occasion": f"Sunday Bulletin - {target_sunday}",
+            "primary_theme": "Community & Fellowship",
+            "supporting_themes": ["Liturgy & Sacraments"] if any(t in tags.lower() for t in ["advent", "lent", "easter", "christmas"]) else [],
+            "ai_generated": True,
+            "source_filename": newsletter["filename"],
+            "source_document_url": newsletter["drive_web_view_link"],
+            "uploader": newsletter["uploader"] or "system",
+        }
+
+        sanity_doc_ids = await run_in_threadpool(
+            create_sanity_editorial_documents,
+            editorial_payload,
+        )
+
+        logger.info(
+            f"Sanity retry synchronization succeeded for newsletter {newsletter_id}: {sanity_doc_ids}"
+        )
+
+        # 4. Notify local agent that review request is ready with Sanity link
+        await notify_agent(
+            "review_request",
+            {
+                "newsletter_id": newsletter_id,
+                "title": summary_row["title"],
+                "summary": summary_row["summary"],
+                "target_sunday": target_sunday,
+                "status": newsletter["status"],
+                "sanity_edition_id": sanity_doc_ids.get("newsletterId"),
+                "sanity_workflow_id": sanity_doc_ids.get("workflowId"),
+                "sanity_delivery_id": sanity_doc_ids.get("deliveryId"),
+            },
+        )
+
+        return JSONResponse(
+            content={
+                "message": "Sanity synchronization succeeded.",
+                "newsletter_id": newsletter_id,
+                "sanity": {
+                    "synced": True,
+                    "status": "awaiting_review",
+                    "newsletterId": sanity_doc_ids.get("newsletterId"),
+                    "workflowId": sanity_doc_ids.get("workflowId"),
+                    "deliveryId": sanity_doc_ids.get("deliveryId"),
+                    "edition_id": sanity_doc_ids.get("newsletterId"),
+                    "workflow_id": sanity_doc_ids.get("workflowId"),
+                    "delivery_id": sanity_doc_ids.get("deliveryId"),
+                },
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Sanity retry synchronization failed for newsletter {newsletter_id}: {e}",
+            exc_info=True,
+        )
+        try:
+            target_sunday_val = newsletter["target_sunday"] if "newsletter" in locals() and newsletter else ""
+            title_val = summary_row["title"] if "summary_row" in locals() and summary_row else ""
+            status_val = newsletter["status"] if "newsletter" in locals() and newsletter else ""
+            fn_val = newsletter["filename"] if "newsletter" in locals() and newsletter else ""
+            await notify_agent(
+                "sanity_sync_failed",
+                {
+                    "newsletter_id": newsletter_id,
+                    "title": title_val,
+                    "target_sunday": target_sunday_val,
+                    "status": status_val,
+                    "error_message": str(e),
+                    "filename": fn_val,
+                },
+            )
+        except Exception as notify_err:
+            logger.error(f"Failed to record sanity_sync_failed agent notification: {notify_err}")
+
+        raise HTTPException(
+            status_code=502,
+            detail=f"Sanity synchronization failed: {str(e)}",
+        )
 

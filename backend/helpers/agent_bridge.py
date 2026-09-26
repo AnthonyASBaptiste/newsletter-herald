@@ -2,10 +2,13 @@ import json
 import logging
 import datetime
 from typing import Dict, Any
-from config import get_settings
+try:
+    from config import get_settings
+    settings = get_settings()
+except Exception:
+    settings = None
 
 logger = logging.getLogger(__name__)
-settings = get_settings()
 
 async def notify_agent(event_type: str, data: Dict[str, Any]):
     """
@@ -16,7 +19,9 @@ async def notify_agent(event_type: str, data: Dict[str, Any]):
     
     # Base URLs for callbacks
     # In production, use the production domain if available, fallback to settings
-    base_url = f"https://{settings.r2_public_domain}" if settings.r2_public_domain else f"http://localhost:{settings.api_port}"
+    r2_domain = getattr(settings, "r2_public_domain", None) if settings else None
+    api_port = getattr(settings, "api_port", 8000) if settings else 8000
+    base_url = f"https://{r2_domain}" if r2_domain else f"http://localhost:{api_port}"
     
     event = {
         "event_id": event_id,
@@ -29,7 +34,8 @@ async def notify_agent(event_type: str, data: Dict[str, Any]):
         "error_message": data.get("error_message", ""),
         "actions": {
             "approve_url": f"{base_url}/newsletters/{event_id}/approve",
-            "regenerate_url": f"{base_url}/newsletters/{event_id}/regenerate"
+            "regenerate_url": f"{base_url}/newsletters/{event_id}/regenerate",
+            "sync_sanity_url": f"{base_url}/newsletters/{event_id}/sync-sanity"
         }
     }
 
@@ -72,6 +78,15 @@ async def notify_agent(event_type: str, data: Dict[str, Any]):
             f"🚨 *Email Bounce Detected*\n\n"
             f"*Recipient:* {data.get('recipient')}\n"
             f"*Reason:* {data.get('error_message')}"
+        )
+    elif event_type == "sanity_sync_failed":
+        event["formatted_message"] = (
+            f"⚠️ *Sanity Editorial Sync Failed*\n\n"
+            f"*Newsletter ID:* {event['event_id']}\n"
+            f"*Title:* {event['title']}\n"
+            f"*Target Sunday:* {event['target_sunday']}\n"
+            f"*Error:* {event['error_message']}\n\n"
+            f"🔄 *Retry Sanity Sync:* {event['actions']['sync_sanity_url']}"
         )
     else:
         event["formatted_message"] = f"Notification Alert: {event_type} - {event['title']}"

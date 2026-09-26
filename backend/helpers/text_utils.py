@@ -1,6 +1,17 @@
-import fitz
-import docx
-import tiktoken
+try:
+    import fitz
+except ImportError:
+    fitz = None
+
+try:
+    import docx
+except ImportError:
+    docx = None
+
+try:
+    import tiktoken
+except ImportError:
+    tiktoken = None
 import logging
 import os
 import io
@@ -102,6 +113,8 @@ def count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
     """
     Estimate token count for a given string and model.
     """
+    if tiktoken is None:
+        return max(1, len(text.split()))
     enc = tiktoken.encoding_for_model(model)
     return len(enc.encode(text))
 
@@ -129,18 +142,42 @@ def extract_text_from_pdf(file: Union[str, BinaryIO, IO]) -> str:
     """
     Extract text from a PDF file.
     """
+    if fitz is not None:
+        try:
+            text = ""
+            if isinstance(file, (str, bytes)):
+                doc = fitz.open(file)
+            else:
+                # Handle BytesIO or file stream
+                doc = fitz.open(stream=file.read(), filetype="pdf")
+                
+            with doc:
+                for page in doc:
+                    text += page.get_text()
+            return text
+        except Exception as e:
+            error_msg = f"Error extracting text from PDF with fitz: {str(e)}"
+            logger.error(error_msg)
+            raise IOError(error_msg)
+
+    # Fallback to subprocess pdftotext CLI if fitz is not available
+    import subprocess
+    import tempfile
     try:
-        text = ""
-        if isinstance(file, (str, bytes)):
-            doc = fitz.open(file)
+        if isinstance(file, str):
+            res = subprocess.run(["pdftotext", file, "-"], capture_output=True, text=True, check=True)
+            return res.stdout
         else:
-            # Handle BytesIO or file stream
-            doc = fitz.open(stream=file.read(), filetype="pdf")
-            
-        with doc:
-            for page in doc:
-                text += page.get_text()
-        return text
+            data = file.read() if hasattr(file, "read") else file
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp.write(data)
+                tmp_path = tmp.name
+            try:
+                res = subprocess.run(["pdftotext", tmp_path, "-"], capture_output=True, text=True, check=True)
+                return res.stdout
+            finally:
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
     except Exception as e:
         error_msg = f"Error extracting text from PDF: {str(e)}"
         logger.error(error_msg)

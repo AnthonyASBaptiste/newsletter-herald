@@ -4,9 +4,14 @@ import io
 import boto3
 from botocore.config import Config
 from typing import Optional
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+try:
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+except ImportError:
+    service_account = None
+    build = None
+    MediaIoBaseUpload = None
 
 from config import get_settings
 
