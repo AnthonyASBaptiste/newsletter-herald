@@ -15,6 +15,20 @@ echo "Target Branch (VERCEL_GIT_COMMIT_REF): '${VERCEL_GIT_COMMIT_REF}'"
 echo "Previous SHA (VERCEL_GIT_PREVIOUS_SHA): '${VERCEL_GIT_PREVIOUS_SHA}'"
 echo "Current SHA (VERCEL_GIT_COMMIT_SHA):   '${VERCEL_GIT_COMMIT_SHA}'"
 
+# 0. Autonomous Agent / Manual Skip Filter: Check for [skip vercel] or [skip ci]
+COMMIT_MSG="${VERCEL_GIT_COMMIT_MESSAGE}"
+if [ -z "$COMMIT_MSG" ]; then
+  COMMIT_MSG=$(git log -1 --pretty=%B 2>/dev/null || echo "")
+fi
+
+# Convert message to lowercase for case-insensitive matching
+COMMIT_MSG_LOWER=$(echo "$COMMIT_MSG" | tr '[:upper:]' '[:lower:]')
+
+if echo "$COMMIT_MSG_LOWER" | grep -Eq "\[skip vercel\]|\[vercel skip\]|\[skip ci\]|\[ci skip\]|\*\*\*no_ci\*\*\*"; then
+  echo "🛑 [SKIP BUILD] Commit message contains skip flag ([skip vercel] / [skip ci]). Skipping build to conserve build minutes."
+  exit 0
+fi
+
 # 1. Branch filter: Only 'main' should ever build on Vercel
 if [ -n "$VERCEL_GIT_COMMIT_REF" ] && [ "$VERCEL_GIT_COMMIT_REF" != "main" ]; then
   echo "🛑 [SKIP BUILD] Branch '${VERCEL_GIT_COMMIT_REF}' is not 'main'. Skipping preview deployment to conserve build minutes."
