@@ -1,4 +1,5 @@
 import requests
+import httpx
 import logging
 from typing import Dict, Any, Optional
 
@@ -123,7 +124,7 @@ def summarize_with_claude(prompt: str, timeout: int = 300) -> Dict[str, str]:
     }
 
     try:
-        response = requests.post(
+        response = httpx.post(
             "https://api.anthropic.com/v1/messages",
             headers=headers,
             json=payload,
