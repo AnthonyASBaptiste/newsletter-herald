@@ -3,7 +3,7 @@
   "version": "0.1.5",
   "description": "Roman Catholic church newsletter summarization and delivery system",
   "scripts": {
-    "dev:backend": "cd backend && .\\venv\\Scripts\\python -m uvicorn main:app --reload",
+    "dev:backend": "cd backend && (.venv/bin/uvicorn main:app --reload || uvicorn main:app --reload)",
     "dev:frontend": "cd frontend && npm run dev",
     "start": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "install:all": "npm install",
