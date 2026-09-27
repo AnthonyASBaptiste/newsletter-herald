@@ -1137,7 +1137,9 @@ async def subscribe_user(data: SubscriberRequest):
 
 
 @app.post("/subscribers/batch")
-async def batch_subscribe_users(data: BatchSubscribersRequest):
+async def batch_subscribe_users(
+    data: BatchSubscribersRequest, _: None = Depends(verify_api_key)
+):
     """
     Imports a list of subscriber emails in batch (e.g. from Gmail export or CSV).
     """
@@ -1601,4 +1603,3 @@ async def retry_sanity_sync(
             status_code=502,
             detail=f"Sanity synchronization failed: {str(e)}",
         )
-
