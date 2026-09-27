@@ -767,7 +767,9 @@ async def get_newsletters(
 
 
 @app.get("/newsletters/{newsletter_id}/approve")
-async def approve_newsletter_summary(newsletter_id: int, request: Request):
+async def approve_newsletter_summary(
+    newsletter_id: int, request: Request, _: None = Depends(verify_api_key)
+):
     """
     Approve a newsletter and schedule it for delivery.
     """

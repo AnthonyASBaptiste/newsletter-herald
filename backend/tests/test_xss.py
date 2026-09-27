@@ -3,8 +3,10 @@ import html
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, patch
 from main import app
+from config import get_settings
 
 client = TestClient(app)
+settings = get_settings()
 
 @pytest.mark.asyncio
 @patch("main.database.execute", new_callable=AsyncMock)
@@ -21,8 +23,9 @@ async def test_approve_newsletter_summary_xss(mock_fetch_one, mock_execute):
     }
 
     # Send request to approve endpoint
-    # Note: We must not send 'accept: application/json' to get the HTMLResponse
-    response = client.get("/newsletters/1/approve", headers={"accept": "text/html"})
+    # Note: We must send valid API key and accept text/html
+    headers = {"accept": "text/html", "X-API-Key": settings.api_key}
+    response = client.get("/newsletters/1/approve", headers=headers)
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
