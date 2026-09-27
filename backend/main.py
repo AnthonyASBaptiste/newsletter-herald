@@ -874,7 +874,9 @@ async def get_upload_logs(_: None = Depends(verify_api_key)) -> JSONResponse:
 
 
 @app.get("/newsletters/{newsletter_id}/regenerate")
-async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
+async def regenerate_newsletter_summary(
+    newsletter_id: int, request: Request, _: None = Depends(verify_api_key)
+):
     """
     Regenerate a newsletter's AI summary from its stored file.
     """
