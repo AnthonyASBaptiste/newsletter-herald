@@ -38,6 +38,13 @@ class Settings(BaseSettings):
     r2_bucket_name: Optional[str] = None
     r2_public_domain: Optional[str] = None  # Optional: for public URLs
 
+    # Sanity CMS / Content Lake Configuration
+    sanity_project_id: str = "qbl0snjp"
+    sanity_dataset: str = "production"
+    sanity_api_token: Optional[str] = None
+    sanity_api_version: str = "2025-08-30"
+    sanity_studio_url: Optional[str] = "http://localhost:3333"
+
     # LLM Configuration
     max_allowed_tokens: int = 20_000
     llm_strategy: str = "auto"  # Choices: auto, local, remote, groq
@@ -82,6 +89,7 @@ class Settings(BaseSettings):
         env_file = ".env"
         env_file_encoding = "utf-8"
         case_sensitive = False
+        extra = "ignore"
 
 
 def configure_logging():

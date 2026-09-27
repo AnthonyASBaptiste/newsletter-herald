@@ -2,8 +2,12 @@ import logging
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from sendgrid import SendGridAPIClient
-from sendgrid.helpers.mail import Mail, Email, To, Content
+try:
+    from sendgrid import SendGridAPIClient
+    from sendgrid.helpers.mail import Mail, Email, To, Content
+except ImportError:
+    SendGridAPIClient = None
+    Mail, Email, To, Content = None, None, None, None
 from config import get_settings
 
 settings = get_settings()

@@ -72,13 +72,14 @@ async def check_and_deliver():
             sent_count = 0
             failed_count = 0
             
+            formatted_summary = (item["summary"] or "").replace("\n", "<br>")
             html_content = f"""
             <html>
             <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
                 <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
                     <h2 style='color: #0071e3;'>{item['title']}</h2>
                     <div style='font-size: 16px;'>
-                        {item['summary'].replace('\n', '<br>')}
+                        {formatted_summary}
                     </div>
                     <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
                     <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, please visit the parish website.</p>

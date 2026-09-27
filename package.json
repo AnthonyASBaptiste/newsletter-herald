@@ -3,14 +3,14 @@
   "version": "0.1.5",
   "description": "Roman Catholic church newsletter summarization and delivery system",
   "scripts": {
-    "dev:backend": "cd backend && .\\venv\\Scripts\\python -m uvicorn main:app --reload",
+    "dev:backend": "cd backend && (.venv/bin/uvicorn main:app --reload || uvicorn main:app --reload)",
     "dev:frontend": "cd frontend && npm run dev",
     "start": "npx concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "install:all": "npm install",
-    "release": "standard-version",
-    "release:patch": "standard-version --release-as patch",
-    "release:minor": "standard-version --release-as minor",
-    "release:major": "standard-version --release-as major",
+    "release": "bash scripts/release.sh patch",
+    "release:patch": "bash scripts/release.sh patch",
+    "release:minor": "bash scripts/release.sh minor",
+    "release:major": "bash scripts/release.sh major",
     "release:revert": "git tag -d v$(node -p \"require('./package.json').version\") && git reset --hard HEAD~1"
   },
   "devDependencies": {
