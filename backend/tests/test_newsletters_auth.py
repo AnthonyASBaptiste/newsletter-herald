@@ -40,3 +40,41 @@ def test_get_newsletters_valid_bearer_token(mock_fetch_all):
     assert response.status_code == 200
     assert response.json()["newsletters"] == []
     mock_fetch_all.assert_called_once()
+
+
+@patch("main.database.fetch_all", new_callable=AsyncMock)
+def test_get_subscribers_unauthenticated(mock_fetch_all):
+    response = client.get("/subscribers")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+    mock_fetch_all.assert_not_called()
+
+
+@patch("main.database.fetch_all", new_callable=AsyncMock)
+def test_get_subscribers_invalid_api_key(mock_fetch_all):
+    response = client.get("/subscribers", headers={"X-API-Key": "invalid_key"})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+    mock_fetch_all.assert_not_called()
+
+
+@patch("main.database.fetch_all", new_callable=AsyncMock)
+def test_get_subscribers_valid_x_api_key(mock_fetch_all):
+    mock_fetch_all.return_value = []
+    headers = {"X-API-Key": settings.api_key}
+    response = client.get("/subscribers", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["subscribers"] == []
+    assert response.json()["stats"] == {"total": 0, "active": 0, "inactive": 0}
+    mock_fetch_all.assert_called_once()
+
+
+@patch("main.database.fetch_all", new_callable=AsyncMock)
+def test_get_subscribers_valid_bearer_token(mock_fetch_all):
+    mock_fetch_all.return_value = []
+    headers = {"Authorization": f"Bearer {settings.api_key}"}
+    response = client.get("/subscribers", headers=headers)
+    assert response.status_code == 200
+    assert response.json()["subscribers"] == []
+    assert response.json()["stats"] == {"total": 0, "active": 0, "inactive": 0}
+    mock_fetch_all.assert_called_once()
