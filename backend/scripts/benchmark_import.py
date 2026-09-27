@@ -39,21 +39,44 @@ async def run_legacy_method(csv_path):
     print("\n--- Running current slow import method (legacy) ---")
     try:
         with open(csv_path, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            count = 0
+            rows = list(csv.DictReader(f))
             start_time = time.time()
-            for row in reader:
+
+            # Pre-parse rows and collect unique emails
+            parsed_rows = []
+            emails_to_fetch = set()
+            for row in rows:
                 email = row.get("E-mail 1 - Value", "").strip().lower()
                 if not email or "@" not in email:
                     continue
-
                 first_name = row.get("First Name", "").strip() or None
                 last_name = row.get("Last Name", "").strip() or None
                 phone = row.get("Phone 1 - Value", "").strip() or None
+                parsed_rows.append({
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "phone": phone,
+                })
+                emails_to_fetch.add(email)
 
-                # Check if subscriber already exists
-                query = select(subscribers).where(subscribers.c.email == email)
-                existing = await database.fetch_one(query)
+            if not emails_to_fetch:
+                duration = time.time() - start_time
+                print(f"Legacy import took: {duration:.4f} seconds for 0 rows")
+                return duration
+
+            # Bulk query existing subscribers upfront to avoid N+1 queries
+            query = select(subscribers).where(subscribers.c.email.in_(list(emails_to_fetch)))
+            existing_records = await database.fetch_all(query)
+            existing_map = {r["email"]: r for r in existing_records}
+
+            count = 0
+            for item in parsed_rows:
+                email = item["email"]
+                first_name = item["first_name"]
+                last_name = item["last_name"]
+                phone = item["phone"]
+                existing = existing_map.get(email)
 
                 if existing:
                     # Update details if changed
