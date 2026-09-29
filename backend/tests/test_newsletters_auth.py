@@ -22,8 +22,10 @@ def test_get_newsletters_invalid_api_key(mock_fetch_all):
     mock_fetch_all.assert_not_called()
 
 
+@patch("main.database.fetch_val", new_callable=AsyncMock)
 @patch("main.database.fetch_all", new_callable=AsyncMock)
-def test_get_newsletters_valid_x_api_key(mock_fetch_all):
+def test_get_newsletters_valid_x_api_key(mock_fetch_all, mock_fetch_val):
+    mock_fetch_val.return_value = 0
     mock_fetch_all.return_value = []
     headers = {"X-API-Key": settings.api_key}
     response = client.get("/newsletters", headers=headers)
@@ -32,8 +34,10 @@ def test_get_newsletters_valid_x_api_key(mock_fetch_all):
     mock_fetch_all.assert_called_once()
 
 
+@patch("main.database.fetch_val", new_callable=AsyncMock)
 @patch("main.database.fetch_all", new_callable=AsyncMock)
-def test_get_newsletters_valid_bearer_token(mock_fetch_all):
+def test_get_newsletters_valid_bearer_token(mock_fetch_all, mock_fetch_val):
+    mock_fetch_val.return_value = 0
     mock_fetch_all.return_value = []
     headers = {"Authorization": f"Bearer {settings.api_key}"}
     response = client.get("/newsletters", headers=headers)

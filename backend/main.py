@@ -25,7 +25,7 @@ from helpers.text_utils import (
 from helpers.storage import upload_to_drive, download_from_drive
 from helpers.validation import validate_newsletter_date
 from helpers.agent_bridge import notify_agent
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, func
 
 from llm.providers import choose_llm_and_summarize
 
@@ -751,33 +751,43 @@ async def get_newsletters(
         f"Fetching newsletters (limit={limit}, offset={offset}, status={status})"
     )
     try:
-        where_clause = ""
-        params = {}
+        count_query = select(func.count()).select_from(newsletters)
         if status:
-            where_clause = "WHERE n.status = :status"
-            params["status"] = status
+            count_query = count_query.where(newsletters.c.status == status)
 
-        count_query = f"SELECT COUNT(*) FROM newsletters n {where_clause}"
-        total_count = await database.fetch_val(query=count_query, values=params) or 0
+        total_count = await database.fetch_val(count_query) or 0
 
-        pagination_clause = ""
+        query = (
+            select(
+                newsletters.c.id,
+                newsletters.c.filename,
+                newsletters.c.drive_web_view_link,
+                newsletters.c.thumbnail_drive_id,
+                newsletters.c.uploaded_at,
+                newsletters.c.status,
+                newsletters.c.target_sunday,
+                newsletters.c.tags,
+                newsletters.c.scheduled_at,
+                summaries.c.title,
+                summaries.c.summary,
+            )
+            .select_from(
+                newsletters.outerjoin(summaries, newsletters.c.id == summaries.c.newsletter_id)
+            )
+        )
+
+        if status:
+            query = query.where(newsletters.c.status == status)
+
+        query = query.order_by(
+            newsletters.c.target_sunday.desc(),
+            newsletters.c.uploaded_at.desc(),
+        )
+
         if limit is not None:
-            pagination_clause = "LIMIT :limit OFFSET :offset"
-            params["limit"] = limit
-            params["offset"] = offset
+            query = query.limit(limit).offset(offset)
 
-        query = f"""
-            SELECT 
-                n.id, n.filename, n.drive_web_view_link, n.thumbnail_drive_id, n.uploaded_at,
-                n.status, n.target_sunday, n.tags, n.scheduled_at,
-                s.title, s.summary
-            FROM newsletters n
-            LEFT JOIN summaries s ON n.id = s.newsletter_id
-            {where_clause}
-            ORDER BY n.target_sunday DESC, n.uploaded_at DESC
-            {pagination_clause}
-        """
-        rows = await database.fetch_all(query=query, values=params)
+        rows = await database.fetch_all(query=query)
 
         result = []
         for row in rows:
