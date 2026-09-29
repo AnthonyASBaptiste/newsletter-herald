@@ -8,10 +8,14 @@ from config import get_settings
 client = TestClient(app)
 settings = get_settings()
 
-@pytest.mark.asyncio
+@pytest.fixture(scope="module")
+def anyio_backend():
+    return "asyncio"
+
+@pytest.mark.anyio
 @patch("main.database.execute", new_callable=AsyncMock)
 @patch("main.database.fetch_one", new_callable=AsyncMock)
-async def test_approve_newsletter_summary_xss(mock_fetch_one, mock_execute):
+async def test_approve_newsletter_summary_xss(mock_fetch_one, mock_execute, anyio_backend):
     # Setup malicious XSS inputs
     malicious_filename = "<script>alert(\"XSS Filename\")</script>.pdf"
     malicious_target_sunday = "<img src=x onerror=alert(\"XSS Sunday\")>"
@@ -41,7 +45,7 @@ async def test_approve_newsletter_summary_xss(mock_fetch_one, mock_execute):
     assert html.escape(malicious_target_sunday) in html_content
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 @patch("main.notify_agent", new_callable=AsyncMock)
 @patch("main.choose_llm_and_summarize")
 @patch("main.extract_text_from_file")
@@ -49,7 +53,7 @@ async def test_approve_newsletter_summary_xss(mock_fetch_one, mock_execute):
 @patch("main.database.execute", new_callable=AsyncMock)
 @patch("main.database.fetch_one", new_callable=AsyncMock)
 async def test_regenerate_newsletter_summary_xss(
-    mock_fetch_one, mock_execute, mock_download, mock_extract, mock_summarize, mock_notify
+    mock_fetch_one, mock_execute, mock_download, mock_extract, mock_summarize, mock_notify, anyio_backend
 ):
     # Setup malicious XSS inputs
     malicious_filename = "<script>alert(\"XSS Filename\")</script>.pdf"
