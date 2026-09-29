@@ -11,7 +11,7 @@ sys.path.append(backend_dir)
 from db.setup import database
 from db.models import subscribers
 from main import batch_subscribe_users, BatchSubscribersRequest
-from sqlalchemy import select, delete
+from sqlalchemy import delete
 
 async def setup_subscribers(num_active: int, num_inactive: int):
     # Clean up benchmark test emails first
@@ -34,7 +34,7 @@ async def setup_subscribers(num_active: int, num_inactive: int):
         await database.execute(query)
 
 async def run_benchmark():
-    print(f"Connecting to database...")
+    print("Connecting to database...")
     await database.connect()
 
     try:
