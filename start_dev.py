@@ -2,6 +2,7 @@ import subprocess
 import os
 import sys
 import time
+import shutil
 
 def start_services():
     # Get the root directory
@@ -36,24 +37,26 @@ def start_services():
         print("⚠️  Uvicorn not found in backend environment. Installing dependencies...")
         subprocess.check_call([python_exe, "-m", "pip", "install", "-r", os.path.join(backend_dir, "requirements.txt")])
 
-    backend_process = subprocess.Popen(
-        [python_exe, "-m", "uvicorn", "main:app", "--reload"],
-        cwd=backend_dir,
-        shell=True if os.name == 'nt' else False
-    )
-
-    # Give backend a moment to start
-    time.sleep(2)
-
-    # Start Frontend (Next.js)
-    print("📂 Starting Frontend on http://localhost:3000")
-    frontend_process = subprocess.Popen(
-        ["npm", "run", "dev"],
-        cwd=frontend_dir,
-        shell=True if os.name == 'nt' else False
-    )
+    backend_process = None
+    frontend_process = None
 
     try:
+        backend_process = subprocess.Popen(
+            [python_exe, "-m", "uvicorn", "main:app", "--reload"],
+            cwd=backend_dir
+        )
+
+        # Give backend a moment to start
+        time.sleep(2)
+
+        # Start Frontend (Next.js)
+        print("📂 Starting Frontend on http://localhost:3000")
+        npm_cmd = shutil.which("npm") or "npm"
+        frontend_process = subprocess.Popen(
+            [npm_cmd, "run", "dev"],
+            cwd=frontend_dir
+        )
+
         # Keep the script running while services are active
         while True:
             time.sleep(1)
@@ -65,8 +68,10 @@ def start_services():
                 break
     except KeyboardInterrupt:
         print("\n🛑 Stopping services...")
-        backend_process.terminate()
-        frontend_process.terminate()
+        if backend_process:
+            backend_process.terminate()
+        if frontend_process:
+            frontend_process.terminate()
         print("✅ Services stopped.")
         sys.exit(0)
 

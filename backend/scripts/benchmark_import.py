@@ -48,10 +48,16 @@ async def run_legacy_method(csv_path):
                 email = row.get("E-mail 1 - Value", "").strip().lower()
                 if not email or "@" not in email:
                     continue
-
                 first_name = row.get("First Name", "").strip() or None
                 last_name = row.get("Last Name", "").strip() or None
                 phone = row.get("Phone 1 - Value", "").strip() or None
+                parsed_rows.append({
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "phone": phone,
+                })
+                emails_to_fetch.add(email)
 
                 rows_data.append((email, first_name, last_name, phone))
                 emails.append(email)
