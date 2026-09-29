@@ -1033,7 +1033,7 @@ class UpdateSubscriberRequest(BaseModel):
 
 
 @app.get("/subscribers")
-async def get_all_subscribers():
+async def get_all_subscribers(_: None = Depends(verify_api_key)):
     """
     Retrieves all subscribers and list statistics.
     """
