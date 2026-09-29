@@ -197,13 +197,15 @@ def extract_text_from_docx(file: Union[str, BinaryIO, IO]) -> str:
         logger.error(error_msg)
         raise IOError(error_msg)
 
-def generate_pdf_thumbnail(file: Union[str, BinaryIO, IO]) -> bytes:
+def generate_pdf_thumbnail(file: Union[str, bytes, BinaryIO, IO]) -> bytes:
     """
     Generates a PNG image of the first page of a PDF.
     """
     try:
-        if isinstance(file, (str, bytes)):
+        if isinstance(file, str):
             doc = fitz.open(file)
+        elif isinstance(file, bytes):
+            doc = fitz.open(stream=file, filetype="pdf")
         else:
             file.seek(0)
             doc = fitz.open(stream=file.read(), filetype="pdf")
