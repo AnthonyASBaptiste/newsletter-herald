@@ -1,12 +1,31 @@
 import pytest
-from main import BatchSubscribersRequest, batch_subscribe_users
+from fastapi.testclient import TestClient
+from main import app, BatchSubscribersRequest, batch_subscribe_users
 from db.setup import database
 from db.models import subscribers
+from config import get_settings
 from sqlalchemy import delete
+
+settings = get_settings()
+client = TestClient(app)
 
 @pytest.fixture(scope="module")
 def anyio_backend():
     return "asyncio"
+
+def test_batch_subscribe_unauthenticated():
+    response = client.post("/subscribers/batch", json={"emails": ["test@example.com"]})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+
+def test_batch_subscribe_invalid_api_key():
+    response = client.post(
+        "/subscribers/batch",
+        headers={"X-API-Key": "invalid_key"},
+        json={"emails": ["test@example.com"]},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
 
 @pytest.mark.anyio
 async def test_batch_subscribe_endpoint(anyio_backend):
