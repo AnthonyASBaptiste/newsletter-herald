@@ -1,27 +1,27 @@
 import asyncio
-import logging
 import io
-import sys
+import logging
 import os
+import sys
 from pathlib import Path
 
 # Add backend directory to path
 backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(backend_dir)
 
+from datetime import datetime
+
 from config import get_settings
+from db.models import model_usage, newsletters, summaries, upload_logs
 from db.setup import database
-from db.models import newsletters, summaries, model_usage, upload_logs
-from helpers.storage import upload_to_drive, make_file_public
+from helpers.storage import upload_to_drive
 from helpers.text_utils import (
+    compress_pdf,
     extract_text_from_file,
     generate_pdf_thumbnail,
     sanitize_filename,
-    compress_pdf,
 )
-from helpers.validation import validate_newsletter_date
 from llm.providers import choose_llm_and_summarize
-from datetime import datetime
 
 # Configure logging
 
