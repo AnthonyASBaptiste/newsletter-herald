@@ -17,7 +17,6 @@ Instructions:
 5. Copy the Client ID and Client Secret into this script or environment.
 """
 
-import os
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 # Scopes required for Google Drive API
