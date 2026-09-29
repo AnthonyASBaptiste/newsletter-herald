@@ -1250,7 +1250,9 @@ async def update_subscriber(subscriber_id: int, data: UpdateSubscriberRequest):
 
 
 @app.delete("/subscribers/{subscriber_id}")
-async def delete_subscriber(subscriber_id: int):
+async def delete_subscriber(
+    subscriber_id: int, _: None = Depends(verify_api_key)
+):
     """
     Deletes a subscriber from the mailing list.
     """

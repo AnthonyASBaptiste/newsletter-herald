@@ -78,3 +78,40 @@ async def test_batch_subscribe_endpoint(anyio_backend):
             delete(subscribers).where(subscribers.c.email.like("%@subscriber-test.com"))
         )
         await database.disconnect()
+
+from fastapi.testclient import TestClient
+from unittest.mock import AsyncMock, patch
+from main import app
+from config import get_settings
+
+client = TestClient(app)
+settings = get_settings()
+
+
+@patch("main.database.fetch_one", new_callable=AsyncMock)
+def test_delete_subscriber_unauthenticated(mock_fetch_one):
+    response = client.delete("/subscribers/123")
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+    mock_fetch_one.assert_not_called()
+
+
+@patch("main.database.fetch_one", new_callable=AsyncMock)
+def test_delete_subscriber_invalid_api_key(mock_fetch_one):
+    response = client.delete("/subscribers/123", headers={"X-API-Key": "wrong-key"})
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Unauthorized"
+    mock_fetch_one.assert_not_called()
+
+
+@patch("main.database.execute", new_callable=AsyncMock)
+@patch("main.database.fetch_one", new_callable=AsyncMock)
+def test_delete_subscriber_authenticated_success(mock_fetch_one, mock_execute):
+    mock_fetch_one.return_value = {"id": 123, "email": "test@subscriber.com"}
+    response = client.delete(
+        "/subscribers/123", headers={"X-API-Key": settings.api_key}
+    )
+    assert response.status_code == 200
+    assert response.json()["message"] == "Subscriber removed successfully"
+    mock_fetch_one.assert_called_once()
+    mock_execute.assert_called_once()
