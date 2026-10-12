@@ -15,7 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 
-from helpers.key_utils import verify_api_key
+from helpers.key_utils import (
+    verify_api_key,
+    is_api_key_valid,
+    verify_unsubscribe_token,
+)
 from helpers.text_utils import (
     extract_text_from_file,
     generate_pdf_thumbnail,
@@ -25,7 +29,7 @@ from helpers.text_utils import (
 from helpers.storage import upload_to_drive, download_from_drive
 from helpers.validation import validate_newsletter_date
 from helpers.agent_bridge import notify_agent
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, func
 
 from llm.providers import choose_llm_and_summarize
 
@@ -314,17 +318,26 @@ async def upload_summary(
             sanity_error = None
             try:
                 from helpers.sanity_editorial import create_sanity_editorial_documents
+
                 editorial_payload = {
                     "newsletter_id": newsletter_id,
                     "title": summary["title"],
                     "summary": summary["summary"],
                     "target_sunday": target_sunday,
                     "publication_date": schedule_date_val or target_sunday,
-                    "liturgical_occasion": summary.get("liturgical_occasion") or f"Sunday Bulletin - {target_sunday}",
+                    "liturgical_occasion": summary.get("liturgical_occasion")
+                    or f"Sunday Bulletin - {target_sunday}",
                     "liturgical_season": summary.get("liturgical_season"),
                     "liturgical_year": summary.get("liturgical_year"),
-                    "primary_theme": summary.get("primary_theme") or summary.get("theme") or "Community & Fellowship",
-                    "supporting_themes": summary.get("supporting_themes") or (["Liturgy & Sacraments"] if summary.get("liturgical_season") else []),
+                    "primary_theme": summary.get("primary_theme")
+                    or summary.get("theme")
+                    or "Community & Fellowship",
+                    "supporting_themes": summary.get("supporting_themes")
+                    or (
+                        ["Liturgy & Sacraments"]
+                        if summary.get("liturgical_season")
+                        else []
+                    ),
                     "ai_generated": True,
                     "ai_model": summary.get("model"),
                     "source_filename": standard_filename,
@@ -375,19 +388,27 @@ async def upload_summary(
             summary["drive_web_view_link"] = web_view_link
             summary["status"] = status
             summary["target_sunday"] = (
-                target_sunday.isoformat() if hasattr(target_sunday, "isoformat") else str(target_sunday)
+                target_sunday.isoformat()
+                if hasattr(target_sunday, "isoformat")
+                else str(target_sunday)
             )
 
             # Handle Eval/Demo Mode (Immediate Preview Dispatch)
-            demo_mode_header = request.headers.get("x-demo-mode", "false").lower() == "true"
-            demo_mode_param = request.query_params.get("demo_mode", "false").lower() == "true"
+            demo_mode_header = (
+                request.headers.get("x-demo-mode", "false").lower() == "true"
+            )
+            demo_mode_param = (
+                request.query_params.get("demo_mode", "false").lower() == "true"
+            )
             is_demo_mode = demo_mode_header or demo_mode_param
 
             demo_sent = False
             demo_recipient = None
 
             if is_demo_mode:
-                logger.info("Demo/Eval Mode active: Dispatching immediate preview email...")
+                logger.info(
+                    "Demo/Eval Mode active: Dispatching immediate preview email..."
+                )
                 if "@" in uploader:
                     demo_recipient = uploader
                 elif settings.gmail_user:
@@ -398,7 +419,7 @@ async def upload_summary(
                     demo_recipient = "admin@newsletterherald.com"
 
                 demo_subject = f"[DEMO/PREVIEW] {summary['title']}"
-                summary_formatted = summary['summary'].replace('\n', '<br>')
+                summary_formatted = summary["summary"].replace("\n", "<br>")
                 demo_html = f"""
                 <html>
                 <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
@@ -419,19 +440,24 @@ async def upload_summary(
 
                 try:
                     from helpers.email import send_newsletter_email
+
                     demo_sent = send_newsletter_email(
                         to_email=demo_recipient,
                         subject=demo_subject,
-                        html_content=demo_html
+                        html_content=demo_html,
                     )
-                    logger.info(f"Demo preview email sent to {demo_recipient}: status={demo_sent}")
+                    logger.info(
+                        f"Demo preview email sent to {demo_recipient}: status={demo_sent}"
+                    )
 
                     await database.execute(
                         delivery_logs.insert().values(
                             newsletter_id=newsletter_id,
                             recipient=demo_recipient,
                             status="demo_sent" if demo_sent else "demo_failed",
-                            error_message=None if demo_sent else "Demo SMTP delivery failure",
+                            error_message=(
+                                None if demo_sent else "Demo SMTP delivery failure"
+                            ),
                         )
                     )
                 except Exception as demo_err:
@@ -484,8 +510,16 @@ async def upload_summary(
             raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
 
         # Log upload status in database
-        upload_status = "success" if (sanity_result and sanity_result.get("synced")) else "partial_success"
-        upload_err_msg = None if (sanity_result and sanity_result.get("synced")) else f"Sanity sync failed: {sanity_error}"
+        upload_status = (
+            "success"
+            if (sanity_result and sanity_result.get("synced"))
+            else "partial_success"
+        )
+        upload_err_msg = (
+            None
+            if (sanity_result and sanity_result.get("synced"))
+            else f"Sanity sync failed: {sanity_error}"
+        )
         await database.execute(
             upload_logs.insert().values(
                 filename=filename,
@@ -550,7 +584,14 @@ async def update_newsletter(
     logger.info(f"Updating newsletter {newsletter_id} with data: {data}")
     try:
         # Filter allowed fields for newsletters table
-        allowed_fields = ["schedule_date", "target_sunday", "tags", "delivered", "status", "scheduled_at"]
+        allowed_fields = [
+            "schedule_date",
+            "target_sunday",
+            "tags",
+            "delivered",
+            "status",
+            "scheduled_at",
+        ]
         update_data = {k: v for k, v in data.items() if k in allowed_fields}
 
         # Parse dates if they are passed as strings
@@ -572,10 +613,12 @@ async def update_newsletter(
                 ).date()
             except ValueError:
                 pass
-        if "scheduled_at" in update_data and isinstance(update_data["scheduled_at"], str):
+        if "scheduled_at" in update_data and isinstance(
+            update_data["scheduled_at"], str
+        ):
             val = update_data["scheduled_at"]
-            if val.endswith('Z'):
-                val = val[:-1] + '+00:00'
+            if val.endswith("Z"):
+                val = val[:-1] + "+00:00"
             try:
                 update_data["scheduled_at"] = datetime.fromisoformat(val)
             except ValueError:
@@ -703,72 +746,94 @@ async def get_newsletters(
     limit: Optional[int] = Query(None, ge=1),
     offset: int = Query(0, ge=0),
     status: Optional[str] = Query(None),
-    _: None = Depends(verify_api_key)
+    _: None = Depends(verify_api_key),
 ) -> JSONResponse:
     """
     Fetches newsletters and their associated summaries from the database,
     supporting pagination (limit & offset) and status filtering.
     """
-    logger.info(f"Fetching newsletters (limit={limit}, offset={offset}, status={status})")
+    logger.info(
+        f"Fetching newsletters (limit={limit}, offset={offset}, status={status})"
+    )
     try:
-        where_clause = ""
-        params = {}
+        count_query = select(func.count()).select_from(newsletters)
         if status:
-            where_clause = "WHERE n.status = :status"
-            params["status"] = status
+            count_query = count_query.where(newsletters.c.status == status)
 
-        count_query = f"SELECT COUNT(*) FROM newsletters n {where_clause}"
-        total_count = await database.fetch_val(query=count_query, values=params) or 0
+        total_count = await database.fetch_val(count_query) or 0
 
-        pagination_clause = ""
+        query = (
+            select(
+                newsletters.c.id,
+                newsletters.c.filename,
+                newsletters.c.drive_web_view_link,
+                newsletters.c.thumbnail_drive_id,
+                newsletters.c.uploaded_at,
+                newsletters.c.status,
+                newsletters.c.target_sunday,
+                newsletters.c.tags,
+                newsletters.c.scheduled_at,
+                summaries.c.title,
+                summaries.c.summary,
+            )
+            .select_from(
+                newsletters.outerjoin(summaries, newsletters.c.id == summaries.c.newsletter_id)
+            )
+        )
+
+        if status:
+            query = query.where(newsletters.c.status == status)
+
+        query = query.order_by(
+            newsletters.c.target_sunday.desc(),
+            newsletters.c.uploaded_at.desc(),
+        )
+
         if limit is not None:
-            pagination_clause = "LIMIT :limit OFFSET :offset"
-            params["limit"] = limit
-            params["offset"] = offset
+            query = query.limit(limit).offset(offset)
 
-        query = f"""
-            SELECT 
-                n.id, n.filename, n.drive_web_view_link, n.thumbnail_drive_id, n.uploaded_at,
-                n.status, n.target_sunday, n.tags, n.scheduled_at,
-                s.title, s.summary
-            FROM newsletters n
-            LEFT JOIN summaries s ON n.id = s.newsletter_id
-            {where_clause}
-            ORDER BY n.target_sunday DESC, n.uploaded_at DESC
-            {pagination_clause}
-        """
-        rows = await database.fetch_all(query=query, values=params)
+        rows = await database.fetch_all(query=query)
 
         result = []
         for row in rows:
-            result.append({
-                "id": row["id"],
-                "filename": row["filename"],
-                "drive_link": row["drive_web_view_link"],
-                "thumbnail_id": row["thumbnail_drive_id"],
-                "uploaded_at": row["uploaded_at"].isoformat() if row["uploaded_at"] else None,
-                "status": row["status"],
-                "target_sunday": row["target_sunday"].isoformat() if row["target_sunday"] else None,
-                "tags": row["tags"],
-                "scheduled_at": row["scheduled_at"].isoformat() if row["scheduled_at"] else None,
-                "title": row["title"],
-                "summary": row["summary"]
-            })
+            result.append(
+                {
+                    "id": row["id"],
+                    "filename": row["filename"],
+                    "drive_link": row["drive_web_view_link"],
+                    "thumbnail_id": row["thumbnail_drive_id"],
+                    "uploaded_at": (
+                        row["uploaded_at"].isoformat() if row["uploaded_at"] else None
+                    ),
+                    "status": row["status"],
+                    "target_sunday": (
+                        row["target_sunday"].isoformat()
+                        if row["target_sunday"]
+                        else None
+                    ),
+                    "tags": row["tags"],
+                    "scheduled_at": (
+                        row["scheduled_at"].isoformat() if row["scheduled_at"] else None
+                    ),
+                    "title": row["title"],
+                    "summary": row["summary"],
+                }
+            )
 
         has_more = (offset + len(result)) < total_count if limit is not None else False
 
-        return JSONResponse(content={
-            "newsletters": result,
-            "total": total_count,
-            "has_more": has_more
-        })
+        return JSONResponse(
+            content={"newsletters": result, "total": total_count, "has_more": has_more}
+        )
     except Exception as e:
         logger.error(f"Error fetching newsletters: {e}")
         raise HTTPException(status_code=500, detail=f"Error fetching newsletters: {e}")
 
 
 @app.get("/newsletters/{newsletter_id}/approve")
-async def approve_newsletter_summary(newsletter_id: int, request: Request):
+async def approve_newsletter_summary(
+    newsletter_id: int, request: Request, _: None = Depends(verify_api_key)
+):
     """
     Approve a newsletter and schedule it for delivery.
     """
@@ -875,7 +940,9 @@ async def get_upload_logs(_: None = Depends(verify_api_key)) -> JSONResponse:
 
 
 @app.get("/newsletters/{newsletter_id}/regenerate")
-async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
+async def regenerate_newsletter_summary(
+    newsletter_id: int, request: Request, _: None = Depends(verify_api_key)
+):
     """
     Regenerate a newsletter's AI summary from its stored file.
     """
@@ -916,17 +983,26 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
         sanity_result = None
         try:
             from helpers.sanity_editorial import create_sanity_editorial_documents
+
             editorial_payload = {
                 "newsletter_id": newsletter_id,
                 "title": summary_data["title"],
                 "summary": summary_data["summary"],
                 "target_sunday": newsletter["target_sunday"],
-                "publication_date": newsletter["schedule_date"] or newsletter["target_sunday"],
-                "liturgical_occasion": summary_data.get("liturgical_occasion") or f"Sunday Bulletin - {newsletter['target_sunday']}",
+                "publication_date": newsletter["schedule_date"]
+                or newsletter["target_sunday"],
+                "liturgical_occasion": summary_data.get("liturgical_occasion")
+                or f"Sunday Bulletin - {newsletter['target_sunday']}",
                 "liturgical_season": summary_data.get("liturgical_season"),
                 "liturgical_year": summary_data.get("liturgical_year"),
-                "primary_theme": summary_data.get("primary_theme") or "Community & Fellowship",
-                "supporting_themes": summary_data.get("supporting_themes") or (["Liturgy & Sacraments"] if summary_data.get("liturgical_season") else []),
+                "primary_theme": summary_data.get("primary_theme")
+                or "Community & Fellowship",
+                "supporting_themes": summary_data.get("supporting_themes")
+                or (
+                    ["Liturgy & Sacraments"]
+                    if summary_data.get("liturgical_season")
+                    else []
+                ),
                 "ai_generated": True,
                 "ai_model": summary_data.get("model"),
                 "source_filename": filename,
@@ -959,9 +1035,15 @@ async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
                 "summary": summary_data["summary"],
                 "target_sunday": newsletter["target_sunday"],
                 "status": newsletter["status"],
-                "sanity_edition_id": sanity_result.get("edition_id") if sanity_result else None,
-                "sanity_workflow_id": sanity_result.get("workflow_id") if sanity_result else None,
-                "sanity_delivery_id": sanity_result.get("delivery_id") if sanity_result else None,
+                "sanity_edition_id": (
+                    sanity_result.get("edition_id") if sanity_result else None
+                ),
+                "sanity_workflow_id": (
+                    sanity_result.get("workflow_id") if sanity_result else None
+                ),
+                "sanity_delivery_id": (
+                    sanity_result.get("delivery_id") if sanity_result else None
+                ),
             },
         )
 
@@ -1033,8 +1115,13 @@ class UpdateSubscriberRequest(BaseModel):
     is_active: bool
 
 
+class UnsubscribeRequest(BaseModel):
+    email: str
+    token: str | None = None
+
+
 @app.get("/subscribers")
-async def get_all_subscribers():
+async def get_all_subscribers(_: None = Depends(verify_api_key)):
     """
     Retrieves all subscribers and list statistics.
     """
@@ -1199,20 +1286,26 @@ async def batch_subscribe_users(
 
         # 3. Perform bulk operations
         if emails_to_reactivate:
-            update_query = "UPDATE subscribers SET is_active = true WHERE email = :email"
+            update_query = (
+                "UPDATE subscribers SET is_active = true WHERE email = :email"
+            )
             update_values = [{"email": email} for email in emails_to_reactivate]
             await database.execute_many(update_query, update_values)
             reactivated_count = len(emails_to_reactivate)
 
         if emails_to_insert:
-            insert_query = "INSERT INTO subscribers (email, is_active) VALUES (:email, true)"
+            insert_query = (
+                "INSERT INTO subscribers (email, is_active) VALUES (:email, true)"
+            )
             insert_values = [{"email": email} for email in emails_to_insert]
             await database.execute_many(insert_query, insert_values)
             added_count = len(emails_to_insert)
 
     except Exception as e:
         logger.error(f"Error importing batch emails: {e}")
-        raise HTTPException(status_code=500, detail="Error during batch subscriber import")
+        raise HTTPException(
+            status_code=500, detail="Error during batch subscriber import"
+        )
 
     return JSONResponse(
         content={
@@ -1272,31 +1365,84 @@ async def delete_subscriber(
 
 
 @app.post("/subscribers/unsubscribe")
-async def unsubscribe_user(data: SubscriberRequest):
+@app.get("/subscribers/unsubscribe")
+async def unsubscribe_user(
+    request: Request,
+    data: UnsubscribeRequest | None = None,
+    email: str | None = Query(None),
+    token: str | None = Query(None),
+):
     """
     Unsubscribes a user from the mailing list.
+    Requires a valid unguessable token/hash or valid API key authorization.
     """
-    email = data.email.strip().lower()
+    target_email = (data.email if data and data.email else email) or ""
+    provided_token = (data.token if data and data.token else token) or ""
+
+    target_email = target_email.strip().lower()
+    if not target_email or "@" not in target_email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    authorized = is_api_key_valid(request) or (
+        provided_token and verify_unsubscribe_token(target_email, provided_token)
+    )
+
+    if not authorized:
+        logger.warning(f"Unauthorized unsubscribe attempt for email: {target_email}")
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Valid unsubscribe token or API key required",
+        )
+
     try:
-        query = select(subscribers).where(subscribers.c.email == email)
+        query = select(subscribers).where(subscribers.c.email == target_email)
         existing = await database.fetch_one(query)
 
         if not existing or not existing["is_active"]:
-            return JSONResponse(
-                content={"message": "Email is not subscribed."}, status_code=200
-            )
+            msg = "Email is not subscribed."
+            if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+                return HTMLResponse(content=f"""
+                <!DOCTYPE html>
+                <html>
+                <head><title>Unsubscribe</title></head>
+                <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f7;">
+                    <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px;">
+                        <h2 style="color: #1d1d1f;">Unsubscribe</h2>
+                        <p style="color: #86868b;">{html.escape(target_email)} is not currently subscribed.</p>
+                    </div>
+                </body>
+                </html>
+                """)
+            return JSONResponse(content={"message": msg}, status_code=200)
 
         update_query = (
             subscribers.update()
-            .where(subscribers.c.email == email)
+            .where(subscribers.c.email == target_email)
             .values(is_active=False)
         )
         await database.execute(update_query)
+
+        if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            return HTMLResponse(content=f"""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Unsubscribed Successfully</title></head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f7;">
+                <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px;">
+                    <h2 style="color: #0071e3;">✓ Unsubscribed</h2>
+                    <p style="color: #86868b;">You have been successfully unsubscribed from the newsletter.</p>
+                </div>
+            </body>
+            </html>
+            """)
+
         return JSONResponse(
             content={"message": "You have been successfully unsubscribed."}
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error unsubscribing email: {e}")
+        logger.error(f"Error unsubscribing email {target_email}: {e}")
         raise HTTPException(status_code=500, detail="Error unsubscribing email")
 
 
@@ -1316,7 +1462,7 @@ async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONRes
         rows = await database.fetch_all(query)
 
         result = []
-        for row in sorted_rows:
+        for row in rows:
             result.append(json.loads(row["payload"]))
 
         # 2. Delete the fetched notifications
@@ -1368,7 +1514,9 @@ async def send_newsletter_now(
                 summaries.c.summary,
             )
             .select_from(
-                newsletters.join(summaries, newsletters.c.id == summaries.c.newsletter_id)
+                newsletters.join(
+                    summaries, newsletters.c.id == summaries.c.newsletter_id
+                )
             )
             .where(newsletters.c.id == newsletter_id)
         )
@@ -1380,37 +1528,46 @@ async def send_newsletter_now(
         sub_query = select(subscribers.c.email).where(subscribers.c.is_active == True)
         active_subs = await database.fetch_all(sub_query)
         if not active_subs:
-            raise HTTPException(status_code=400, detail="No active subscribers to send to")
+            raise HTTPException(
+                status_code=400, detail="No active subscribers to send to"
+            )
 
         formatted_summary = (item["summary"] or "").replace("\n", "<br>")
-        html_content = f"""
-        <html>
-        <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
-            <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
-                <h2 style='color: #0071e3;'>{item['title']}</h2>
-                <div style='font-size: 16px;'>
-                    {formatted_summary}
-                </div>
-                <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
-                <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, please visit the parish website.</p>
-            </div>
-        </body>
-        </html>
-        """
 
         from helpers.email import send_newsletter_email
+        from helpers.key_utils import generate_unsubscribe_token
+
+        base_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
 
         semaphore = asyncio.Semaphore(10)
 
         async def deliver_to_subscriber(sub):
             async with semaphore:
                 recipient = sub["email"]
+                unsub_token = generate_unsubscribe_token(recipient)
+                unsub_url = f"{base_url}/subscribers/unsubscribe?email={recipient}&token={unsub_token}"
+
+                sub_html_content = f"""
+                <html>
+                <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
+                    <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
+                        <h2 style='color: #0071e3;'>{item['title']}</h2>
+                        <div style='font-size: 16px;'>
+                            {formatted_summary}
+                        </div>
+                        <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
+                        <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, <a href='{unsub_url}'>click here</a>.</p>
+                    </div>
+                </body>
+                </html>
+                """
+
                 try:
                     success = await asyncio.to_thread(
                         send_newsletter_email,
                         to_email=recipient,
                         subject=item["title"],
-                        html_content=html_content,
+                        html_content=sub_html_content,
                     )
                 except Exception as err:
                     logger.error(f"Error sending email to {recipient}: {err}")
@@ -1439,9 +1596,7 @@ async def send_newsletter_now(
                 failed_count += 1
 
         if log_values:
-            await database.execute_many(
-                query=delivery_logs.insert(), values=log_values
-            )
+            await database.execute_many(query=delivery_logs.insert(), values=log_values)
 
         update_query = (
             newsletters.update()
@@ -1481,7 +1636,10 @@ async def archive_newsletter(
         )
         await database.execute(query)
         return JSONResponse(
-            content={"message": "Newsletter archived successfully", "status": "archived"}
+            content={
+                "message": "Newsletter archived successfully",
+                "status": "archived",
+            }
         )
     except Exception as e:
         logger.error(f"Error archiving newsletter {newsletter_id}: {e}")
@@ -1503,7 +1661,9 @@ async def retry_sanity_sync(
         query = select(newsletters).where(newsletters.c.id == newsletter_id)
         newsletter = await database.fetch_one(query)
         if not newsletter:
-            raise HTTPException(status_code=404, detail=f"Newsletter {newsletter_id} not found")
+            raise HTTPException(
+                status_code=404, detail=f"Newsletter {newsletter_id} not found"
+            )
 
         # 2. Fetch existing summary record from PostgreSQL
         sum_query = select(summaries).where(summaries.c.newsletter_id == newsletter_id)
@@ -1529,7 +1689,13 @@ async def retry_sanity_sync(
             "publication_date": schedule_date_val or target_sunday,
             "liturgical_occasion": f"Sunday Bulletin - {target_sunday}",
             "primary_theme": "Community & Fellowship",
-            "supporting_themes": ["Liturgy & Sacraments"] if any(t in tags.lower() for t in ["advent", "lent", "easter", "christmas"]) else [],
+            "supporting_themes": (
+                ["Liturgy & Sacraments"]
+                if any(
+                    t in tags.lower() for t in ["advent", "lent", "easter", "christmas"]
+                )
+                else []
+            ),
             "ai_generated": True,
             "source_filename": newsletter["filename"],
             "source_document_url": newsletter["drive_web_view_link"],
@@ -1598,10 +1764,24 @@ async def retry_sanity_sync(
             exc_info=True,
         )
         try:
-            target_sunday_val = newsletter["target_sunday"] if "newsletter" in locals() and newsletter else ""
-            title_val = summary_row["title"] if "summary_row" in locals() and summary_row else ""
-            status_val = newsletter["status"] if "newsletter" in locals() and newsletter else ""
-            fn_val = newsletter["filename"] if "newsletter" in locals() and newsletter else ""
+            target_sunday_val = (
+                newsletter["target_sunday"]
+                if "newsletter" in locals() and newsletter
+                else ""
+            )
+            title_val = (
+                summary_row["title"]
+                if "summary_row" in locals() and summary_row
+                else ""
+            )
+            status_val = (
+                newsletter["status"] if "newsletter" in locals() and newsletter else ""
+            )
+            fn_val = (
+                newsletter["filename"]
+                if "newsletter" in locals() and newsletter
+                else ""
+            )
             await notify_agent(
                 "sanity_sync_failed",
                 {
@@ -1614,7 +1794,9 @@ async def retry_sanity_sync(
                 },
             )
         except Exception as notify_err:
-            logger.error(f"Failed to record sanity_sync_failed agent notification: {notify_err}")
+            logger.error(
+                f"Failed to record sanity_sync_failed agent notification: {notify_err}"
+            )
 
         raise HTTPException(
             status_code=502,

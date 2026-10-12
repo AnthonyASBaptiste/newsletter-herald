@@ -40,20 +40,39 @@ async def run_legacy_method(csv_path):
     try:
         with open(csv_path, mode="r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
-            count = 0
+            rows_data = []
+            emails = []
             start_time = time.time()
+
             for row in reader:
                 email = row.get("E-mail 1 - Value", "").strip().lower()
                 if not email or "@" not in email:
                     continue
-
                 first_name = row.get("First Name", "").strip() or None
                 last_name = row.get("Last Name", "").strip() or None
                 phone = row.get("Phone 1 - Value", "").strip() or None
+                parsed_rows.append({
+                    "email": email,
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "phone": phone,
+                })
+                emails_to_fetch.add(email)
 
-                # Check if subscriber already exists
-                query = select(subscribers).where(subscribers.c.email == email)
-                existing = await database.fetch_one(query)
+                rows_data.append((email, first_name, last_name, phone))
+                emails.append(email)
+
+            if not rows_data:
+                return 0
+
+            # Pre-fetch existing subscribers in a single upfront bulk query to eliminate N+1 queries
+            query = select(subscribers).where(subscribers.c.email.in_(emails))
+            existing_records = await database.fetch_all(query)
+            existing_map = {r["email"]: r for r in existing_records}
+
+            count = 0
+            for email, first_name, last_name, phone in rows_data:
+                existing = existing_map.get(email)
 
                 if existing:
                     # Update details if changed
@@ -81,6 +100,7 @@ async def run_legacy_method(csv_path):
     except Exception as e:
         print(f"Legacy import error: {e}")
         return 0
+
 
 async def run_optimized_method(csv_path):
     print("\n--- Running optimized bulk import method ---")

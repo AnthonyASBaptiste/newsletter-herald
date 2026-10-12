@@ -122,7 +122,8 @@ function SubscribersPageContent() {
 
   useEffect(() => {
     if (user && hasAdminAccess) {
-      fetchSubscribers();
+      const timer = window.setTimeout(() => void fetchSubscribers(), 0);
+      return () => window.clearTimeout(timer);
     }
   }, [user, hasAdminAccess, fetchSubscribers]);
 

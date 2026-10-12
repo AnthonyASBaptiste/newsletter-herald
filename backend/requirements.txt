@@ -158,3 +158,4 @@ uvicorn==0.35.0
     # via newsletter-herald-backend (pyproject.toml)
 werkzeug==3.1.8
     # via sendgrid
+httpx==0.28.1
