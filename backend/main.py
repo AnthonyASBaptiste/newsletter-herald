@@ -15,7 +15,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
 
-from helpers.key_utils import verify_api_key
+from helpers.key_utils import (
+    verify_api_key,
+    is_api_key_valid,
+    verify_unsubscribe_token,
+)
 from helpers.text_utils import (
     extract_text_from_file,
     generate_pdf_thumbnail,
@@ -25,7 +29,7 @@ from helpers.text_utils import (
 from helpers.storage import upload_to_drive, download_from_drive
 from helpers.validation import validate_newsletter_date
 from helpers.agent_bridge import notify_agent
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, func
 
 from llm.providers import choose_llm_and_summarize
 
@@ -751,33 +755,43 @@ async def get_newsletters(
         f"Fetching newsletters (limit={limit}, offset={offset}, status={status})"
     )
     try:
-        where_clause = ""
-        params = {}
+        count_query = select(func.count()).select_from(newsletters)
         if status:
-            where_clause = "WHERE n.status = :status"
-            params["status"] = status
+            count_query = count_query.where(newsletters.c.status == status)
 
-        count_query = f"SELECT COUNT(*) FROM newsletters n {where_clause}"
-        total_count = await database.fetch_val(query=count_query, values=params) or 0
+        total_count = await database.fetch_val(count_query) or 0
 
-        pagination_clause = ""
+        query = (
+            select(
+                newsletters.c.id,
+                newsletters.c.filename,
+                newsletters.c.drive_web_view_link,
+                newsletters.c.thumbnail_drive_id,
+                newsletters.c.uploaded_at,
+                newsletters.c.status,
+                newsletters.c.target_sunday,
+                newsletters.c.tags,
+                newsletters.c.scheduled_at,
+                summaries.c.title,
+                summaries.c.summary,
+            )
+            .select_from(
+                newsletters.outerjoin(summaries, newsletters.c.id == summaries.c.newsletter_id)
+            )
+        )
+
+        if status:
+            query = query.where(newsletters.c.status == status)
+
+        query = query.order_by(
+            newsletters.c.target_sunday.desc(),
+            newsletters.c.uploaded_at.desc(),
+        )
+
         if limit is not None:
-            pagination_clause = "LIMIT :limit OFFSET :offset"
-            params["limit"] = limit
-            params["offset"] = offset
+            query = query.limit(limit).offset(offset)
 
-        query = f"""
-            SELECT 
-                n.id, n.filename, n.drive_web_view_link, n.thumbnail_drive_id, n.uploaded_at,
-                n.status, n.target_sunday, n.tags, n.scheduled_at,
-                s.title, s.summary
-            FROM newsletters n
-            LEFT JOIN summaries s ON n.id = s.newsletter_id
-            {where_clause}
-            ORDER BY n.target_sunday DESC, n.uploaded_at DESC
-            {pagination_clause}
-        """
-        rows = await database.fetch_all(query=query, values=params)
+        rows = await database.fetch_all(query=query)
 
         result = []
         for row in rows:
@@ -925,7 +939,9 @@ async def get_upload_logs(_: None = Depends(verify_api_key)) -> JSONResponse:
 
 
 @app.get("/newsletters/{newsletter_id}/regenerate")
-async def regenerate_newsletter_summary(newsletter_id: int, request: Request):
+async def regenerate_newsletter_summary(
+    newsletter_id: int, request: Request, _: None = Depends(verify_api_key)
+):
     """
     Regenerate a newsletter's AI summary from its stored file.
     """
@@ -1096,6 +1112,11 @@ class BatchSubscribersRequest(BaseModel):
 
 class UpdateSubscriberRequest(BaseModel):
     is_active: bool
+
+
+class UnsubscribeRequest(BaseModel):
+    email: str
+    token: str | None = None
 
 
 @app.get("/subscribers")
@@ -1339,31 +1360,84 @@ async def delete_subscriber(subscriber_id: int):
 
 
 @app.post("/subscribers/unsubscribe")
-async def unsubscribe_user(data: SubscriberRequest):
+@app.get("/subscribers/unsubscribe")
+async def unsubscribe_user(
+    request: Request,
+    data: UnsubscribeRequest | None = None,
+    email: str | None = Query(None),
+    token: str | None = Query(None),
+):
     """
     Unsubscribes a user from the mailing list.
+    Requires a valid unguessable token/hash or valid API key authorization.
     """
-    email = data.email.strip().lower()
+    target_email = (data.email if data and data.email else email) or ""
+    provided_token = (data.token if data and data.token else token) or ""
+
+    target_email = target_email.strip().lower()
+    if not target_email or "@" not in target_email:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    authorized = is_api_key_valid(request) or (
+        provided_token and verify_unsubscribe_token(target_email, provided_token)
+    )
+
+    if not authorized:
+        logger.warning(f"Unauthorized unsubscribe attempt for email: {target_email}")
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: Valid unsubscribe token or API key required",
+        )
+
     try:
-        query = select(subscribers).where(subscribers.c.email == email)
+        query = select(subscribers).where(subscribers.c.email == target_email)
         existing = await database.fetch_one(query)
 
         if not existing or not existing["is_active"]:
-            return JSONResponse(
-                content={"message": "Email is not subscribed."}, status_code=200
-            )
+            msg = "Email is not subscribed."
+            if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+                return HTMLResponse(content=f"""
+                <!DOCTYPE html>
+                <html>
+                <head><title>Unsubscribe</title></head>
+                <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f7;">
+                    <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px;">
+                        <h2 style="color: #1d1d1f;">Unsubscribe</h2>
+                        <p style="color: #86868b;">{html.escape(target_email)} is not currently subscribed.</p>
+                    </div>
+                </body>
+                </html>
+                """)
+            return JSONResponse(content={"message": msg}, status_code=200)
 
         update_query = (
             subscribers.update()
-            .where(subscribers.c.email == email)
+            .where(subscribers.c.email == target_email)
             .values(is_active=False)
         )
         await database.execute(update_query)
+
+        if request.method == "GET" and "text/html" in request.headers.get("accept", ""):
+            return HTMLResponse(content=f"""
+            <!DOCTYPE html>
+            <html>
+            <head><title>Unsubscribed Successfully</title></head>
+            <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #f5f5f7;">
+                <div style="background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); text-align: center; max-width: 450px;">
+                    <h2 style="color: #0071e3;">✓ Unsubscribed</h2>
+                    <p style="color: #86868b;">You have been successfully unsubscribed from the newsletter.</p>
+                </div>
+            </body>
+            </html>
+            """)
+
         return JSONResponse(
             content={"message": "You have been successfully unsubscribed."}
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error unsubscribing email: {e}")
+        logger.error(f"Error unsubscribing email {target_email}: {e}")
         raise HTTPException(status_code=500, detail="Error unsubscribing email")
 
 
@@ -1383,7 +1457,7 @@ async def poll_agent_notifications(_: None = Depends(verify_api_key)) -> JSONRes
         rows = await database.fetch_all(query)
 
         result = []
-        for row in sorted_rows:
+        for row in rows:
             result.append(json.loads(row["payload"]))
 
         # 2. Delete the fetched notifications
@@ -1454,34 +1528,41 @@ async def send_newsletter_now(
             )
 
         formatted_summary = (item["summary"] or "").replace("\n", "<br>")
-        html_content = f"""
-        <html>
-        <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
-            <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
-                <h2 style='color: #0071e3;'>{item['title']}</h2>
-                <div style='font-size: 16px;'>
-                    {formatted_summary}
-                </div>
-                <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
-                <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, please visit the parish website.</p>
-            </div>
-        </body>
-        </html>
-        """
 
         from helpers.email import send_newsletter_email
+        from helpers.key_utils import generate_unsubscribe_token
+
+        base_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
 
         semaphore = asyncio.Semaphore(10)
 
         async def deliver_to_subscriber(sub):
             async with semaphore:
                 recipient = sub["email"]
+                unsub_token = generate_unsubscribe_token(recipient)
+                unsub_url = f"{base_url}/subscribers/unsubscribe?email={recipient}&token={unsub_token}"
+
+                sub_html_content = f"""
+                <html>
+                <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
+                    <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
+                        <h2 style='color: #0071e3;'>{item['title']}</h2>
+                        <div style='font-size: 16px;'>
+                            {formatted_summary}
+                        </div>
+                        <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
+                        <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, <a href='{unsub_url}'>click here</a>.</p>
+                    </div>
+                </body>
+                </html>
+                """
+
                 try:
                     success = await asyncio.to_thread(
                         send_newsletter_email,
                         to_email=recipient,
                         subject=item["title"],
-                        html_content=html_content,
+                        html_content=sub_html_content,
                     )
                 except Exception as err:
                     logger.error(f"Error sending email to {recipient}: {err}")

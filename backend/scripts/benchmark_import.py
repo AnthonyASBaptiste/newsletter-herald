@@ -39,13 +39,12 @@ async def run_legacy_method(csv_path):
     print("\n--- Running current slow import method (legacy) ---")
     try:
         with open(csv_path, mode="r", encoding="utf-8-sig") as f:
-            rows = list(csv.DictReader(f))
+            reader = csv.DictReader(f)
+            rows_data = []
+            emails = []
             start_time = time.time()
 
-            # Pre-parse rows and collect unique emails
-            parsed_rows = []
-            emails_to_fetch = set()
-            for row in rows:
+            for row in reader:
                 email = row.get("E-mail 1 - Value", "").strip().lower()
                 if not email or "@" not in email:
                     continue
@@ -60,22 +59,19 @@ async def run_legacy_method(csv_path):
                 })
                 emails_to_fetch.add(email)
 
-            if not emails_to_fetch:
-                duration = time.time() - start_time
-                print(f"Legacy import took: {duration:.4f} seconds for 0 rows")
-                return duration
+                rows_data.append((email, first_name, last_name, phone))
+                emails.append(email)
 
-            # Bulk query existing subscribers upfront to avoid N+1 queries
-            query = select(subscribers).where(subscribers.c.email.in_(list(emails_to_fetch)))
+            if not rows_data:
+                return 0
+
+            # Pre-fetch existing subscribers in a single upfront bulk query to eliminate N+1 queries
+            query = select(subscribers).where(subscribers.c.email.in_(emails))
             existing_records = await database.fetch_all(query)
             existing_map = {r["email"]: r for r in existing_records}
 
             count = 0
-            for item in parsed_rows:
-                email = item["email"]
-                first_name = item["first_name"]
-                last_name = item["last_name"]
-                phone = item["phone"]
+            for email, first_name, last_name, phone in rows_data:
                 existing = existing_map.get(email)
 
                 if existing:
@@ -104,6 +100,7 @@ async def run_legacy_method(csv_path):
     except Exception as e:
         print(f"Legacy import error: {e}")
         return 0
+
 
 async def run_optimized_method(csv_path):
     print("\n--- Running optimized bulk import method ---")

@@ -12,6 +12,7 @@ from db.setup import database
 from db.models import newsletters, summaries, subscribers, delivery_logs
 from helpers.email import send_newsletter_email
 from helpers.agent_bridge import notify_agent
+from helpers.key_utils import generate_unsubscribe_token
 from config import get_settings
 
 # Configure logging
@@ -66,6 +67,8 @@ async def check_and_deliver():
             logger.warning("No active subscribers found in database. Aborting delivery.")
             return
 
+        base_url = settings.cors_origins[0] if settings.cors_origins else "http://localhost:3000"
+
         for item in pending:
             logger.info(f"Delivering newsletter {item['id']}: {item['title']}")
             
@@ -73,20 +76,6 @@ async def check_and_deliver():
             failed_count = 0
             
             formatted_summary = (item["summary"] or "").replace("\n", "<br>")
-            html_content = f"""
-            <html>
-            <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
-                <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
-                    <h2 style='color: #0071e3;'>{item['title']}</h2>
-                    <div style='font-size: 16px;'>
-                        {formatted_summary}
-                    </div>
-                    <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
-                    <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, please visit the parish website.</p>
-                </div>
-            </body>
-            </html>
-            """
             
             # Create a Semaphore to limit the number of concurrent email deliveries (e.g. max 10 concurrent requests)
             # This is critical to avoid SMTP socket rate limits, Google/SendGrid connection drops, or thread starvation.
@@ -95,13 +84,31 @@ async def check_and_deliver():
             async def deliver_to_subscriber(sub):
                 async with semaphore:
                     recipient = sub['email']
+                    unsub_token = generate_unsubscribe_token(recipient)
+                    unsub_url = f"{base_url}/subscribers/unsubscribe?email={recipient}&token={unsub_token}"
+
+                    sub_html_content = f"""
+                    <html>
+                    <body style='font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; line-height: 1.6; color: #333;'>
+                        <div style='max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;'>
+                            <h2 style='color: #0071e3;'>{item['title']}</h2>
+                            <div style='font-size: 16px;'>
+                                {formatted_summary}
+                            </div>
+                            <hr style='border: 0; border-top: 1px solid #eee; margin: 30px 0;'>
+                            <p style='font-size: 12px; color: #86868b;'>Sent by Newsletter Herald. To unsubscribe, <a href='{unsub_url}'>click here</a>.</p>
+                        </div>
+                    </body>
+                    </html>
+                    """
+
                     try:
                         # send_newsletter_email is synchronous, so we offload it to a worker thread
                         success = await asyncio.to_thread(
                             send_newsletter_email,
                             to_email=recipient,
                             subject=item['title'],
-                            html_content=html_content
+                            html_content=sub_html_content
                         )
                     except Exception as email_err:
                         logger.error(f"Error executing email send to {recipient} in thread: {email_err}")
