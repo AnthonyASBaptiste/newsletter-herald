@@ -33,7 +33,13 @@ export default function AuthButtons() {
             <Button 
               variant="contained" 
               color="primary" 
-              sx={{ px: 3, borderRadius: '980px', textTransform: 'none', fontWeight: 600 }} 
+              sx={{ 
+                px: 3, 
+                borderRadius: '980px', 
+                textTransform: 'none', 
+                fontWeight: 600,
+                display: { xs: 'none', sm: 'inline-flex' }
+              }} 
             >
               Join Mailing List
             </Button>

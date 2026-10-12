@@ -72,12 +72,12 @@ export default function PublicSignupPage() {
 
 
         <Card sx={{ borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)', border: '1px solid #e0e0e0', overflow: 'hidden' }}>
-          <Box sx={{ bgcolor: '#0071e3', py: 4, textAlign: 'center', color: 'white' }}>
-            <MarkEmailReadIcon sx={{ fontSize: 50, mb: 1 }} />
+          <Box sx={{ bgcolor: '#1d1d1f', py: 4, textAlign: 'center', color: 'white' }}>
+            <MarkEmailReadIcon sx={{ fontSize: 48, mb: 1, color: '#0071e3' }} />
             <Typography variant="h5" fontWeight={700}>
               Join Our Parish Mailing List
             </Typography>
-            <Typography variant="body2" sx={{ opacity: 0.9 }}>
+            <Typography variant="body2" sx={{ opacity: 0.85 }}>
               Receive weekly bulletins and announcements straight to your inbox.
             </Typography>
           </Box>
@@ -92,7 +92,7 @@ export default function PublicSignupPage() {
                   Thank you for subscribing! You will receive our next newsletter issue on Sunday morning.
                 </Typography>
                 <Link href="/" style={{ textDecoration: 'none' }}>
-                  <Button variant="contained" sx={{ borderRadius: '100px', px: 4, bgcolor: '#0071e3' }}>
+                  <Button variant="contained" color="primary" sx={{ borderRadius: '100px', px: 4 }}>
                     Go to Home
                   </Button>
                 </Link>
@@ -124,17 +124,16 @@ export default function PublicSignupPage() {
                   <Button
                     type="submit"
                     variant="contained"
+                    color="primary"
                     fullWidth
                     disabled={loading}
                     size="large"
                     sx={{ 
                       borderRadius: '980px', 
                       py: 1.5, 
-                      bgcolor: '#0071e3', 
                       textTransform: 'none', 
                       fontWeight: 600,
-                      boxShadow: 'none',
-                      '&:hover': { bgcolor: '#0077ed', boxShadow: 'none' }
+                      boxShadow: 'none'
                     }}
                   >
                     {loading ? <CircularProgress size={24} color="inherit" /> : 'Subscribe to Newsletter'}

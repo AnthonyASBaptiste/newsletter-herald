@@ -547,9 +547,10 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                   <Box component="span" sx={{ color: '#0071e3' }}>Your Parish.</Box>
                 </Typography>
                 <Typography 
+                  component="p"
                   variant="h6" 
                   color="text.secondary" 
-                  sx={{ mb: 6, fontWeight: 400, maxWidth: '600px', mx: 'auto' }}
+                  sx={{ mb: 6, fontWeight: 400, maxWidth: '600px', mx: 'auto', textWrap: 'balance' }}
                 >
                   Read the latest church newsletters and stay up to date with 
                   community events, prayers, and announcements.
@@ -1149,9 +1150,50 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               </Box>
             );
           })() : (
-            <Box sx={{ textAlign: 'center', py: 5, opacity: 0.6 }}>
-              <ArticleIcon sx={{ fontSize: 48, mb: 1 }} color="disabled" />
-              <Typography variant="body1">No newsletters have been published yet.</Typography>
+            <Box 
+              sx={{ 
+                textAlign: 'center', 
+                py: { xs: 6, sm: 8 }, 
+                px: 3, 
+                bgcolor: '#ffffff', 
+                borderRadius: '16px', 
+                border: '1px solid #e0e0e0',
+                maxWidth: 520,
+                mx: 'auto',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.02)'
+              }}
+            >
+              <Box 
+                sx={{ 
+                  width: 56, 
+                  height: 56, 
+                  borderRadius: '50%', 
+                  bgcolor: '#f5f5f7', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  mx: 'auto', 
+                  mb: 2 
+                }}
+              >
+                <ArticleIcon sx={{ fontSize: 28, color: 'text.secondary' }} />
+              </Box>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, color: '#1d1d1f' }}>
+                No Bulletins Published Yet
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 400, mx: 'auto', mb: 3, lineHeight: 1.6 }}>
+                New parish newsletters and weekly announcements are shared on Sundays. Join the mailing list to receive them directly in your inbox.
+              </Typography>
+              <Link href="/signup" style={{ textDecoration: 'none' }}>
+                <Button 
+                  variant="outlined" 
+                  color="primary" 
+                  size="small"
+                  sx={{ borderRadius: '980px', textTransform: 'none', fontWeight: 600, px: 3 }}
+                >
+                  Join Mailing List
+                </Button>
+              </Link>
             </Box>
           )}
         </Box>

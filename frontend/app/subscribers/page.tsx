@@ -39,7 +39,7 @@ import PauseCircleOutlineIcon from '@mui/icons-material/PauseCircleOutline';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import HomeIcon from '@mui/icons-material/Home';
 import Link from 'next/link';
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser, useClerk, SignInButton } from "@clerk/nextjs";
 
 interface Subscriber {
   id: number;
@@ -115,20 +115,51 @@ function SubscribersPageContent() {
   }, [backendUrl]);
 
   useEffect(() => {
-    if (isLoaded && !isSignedIn) {
-      window.location.href = '/';
-    }
-  }, [isLoaded, isSignedIn]);
-
-  useEffect(() => {
     if (user && hasAdminAccess) {
       const timer = window.setTimeout(() => void fetchSubscribers(), 0);
       return () => window.clearTimeout(timer);
     }
   }, [user, hasAdminAccess, fetchSubscribers]);
 
-  if (!isLoaded || !isSignedIn) {
+  if (!isLoaded) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
+  }
+
+  if (!isSignedIn) {
+    return (
+      <Box sx={{ minHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#f5f5f7', p: 3 }}>
+        <Paper sx={{ p: 5, maxWidth: 500, width: '100%', textAlign: 'center', borderRadius: 4, boxShadow: '0 8px 30px rgba(0,0,0,0.05)' }}>
+          <Box sx={{ width: 64, height: 64, bgcolor: '#f5f5f7', color: '#1d1d1f', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
+            <PeopleIcon sx={{ fontSize: 32 }} />
+          </Box>
+          <Typography variant="h5" sx={{ fontWeight: 700, mb: 1, letterSpacing: '-0.01em', color: '#1d1d1f' }}>
+            Sign In Required
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 4, lineHeight: 1.6 }}>
+            You must be signed in with an authorized administrator account to access subscriber management.
+          </Typography>
+          <Stack spacing={2} direction="row" justifyContent="center">
+            <Link href="/" style={{ textDecoration: 'none' }}>
+              <Button 
+                variant="outlined" 
+                sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
+              >
+                Return Home
+              </Button>
+            </Link>
+            <SignInButton mode="modal">
+              <Button 
+                variant="contained" 
+                color="primary"
+                sx={{ borderRadius: '980px', textTransform: 'none', px: 3 }}
+              >
+                Sign In
+              </Button>
+            </SignInButton>
+          </Stack>
+        </Paper>
+      </Box>
+    );
   }
 
   if (!hasAdminAccess) {
