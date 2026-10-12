@@ -146,8 +146,11 @@ function SystemErrorsPageContent() {
 
   useEffect(() => {
     if (user && hasAdminAccess) {
-      fetchErrorNewsletters();
-      fetchUploadLogs();
+      const timer = window.setTimeout(() => {
+        void fetchErrorNewsletters();
+        void fetchUploadLogs();
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
   }, [user, hasAdminAccess, fetchErrorNewsletters, fetchUploadLogs]);
 

@@ -79,6 +79,7 @@ def create_sanity_editorial_documents(
     dataset: Optional[str] = None,
     api_version: Optional[str] = None,
     session: Optional[Any] = None,
+    is_valid: bool = True,
 ) -> Dict[str, str]:
     """
     Creates the three related Sanity documents (newsletterEdition, editorialWorkflow, delivery)
@@ -139,8 +140,17 @@ def create_sanity_editorial_documents(
         delivery_id=delivery_id,
     )
 
-    # Ensure status is strictly awaiting_review per requirements
-    edition_doc["status"] = "awaiting_review"
+    # Invalid date checks remain editable drafts and must not enter the review queue.
+    current_stage = "awaiting_review" if is_valid else "draft"
+    edition_doc["status"] = current_stage
+    edition_doc["validation"] = {
+        "dateValid": is_valid,
+        "checks": [
+            "Herald date validation passed."
+            if is_valid
+            else "Herald date validation failed; correct the date before review."
+        ],
+    }
 
     target_sunday = edition_doc["targetSunday"]
     now_iso = normalize_datetime(raw_data.get("created_at"))
@@ -155,7 +165,7 @@ def create_sanity_editorial_documents(
             "_type": "reference",
             "_ref": newsletter_id,
         },
-        "currentStage": "awaiting_review",
+        "currentStage": current_stage,
         "assignedAgent": "herald-ai",
         "decision": "pending",
         "history": [
@@ -180,15 +190,18 @@ def create_sanity_editorial_documents(
                 "timestamp": now_iso,
                 "note": "AI summary synthesized and theme taxonomy assigned.",
             },
+        ],
+    }
+    if is_valid:
+        workflow_doc["history"].append(
             {
                 "_key": "hist_4",
                 "stage": "awaiting_review",
                 "actor": "herald-ai",
                 "timestamp": now_iso,
                 "note": "Pre-flight validation complete. Handoff to human editorial review.",
-            },
-        ],
-    }
+            }
+        )
 
     # 5. Construct delivery document
     # Scheduled for target Sunday at 12:00:00 UTC by default
@@ -201,7 +214,7 @@ def create_sanity_editorial_documents(
             "_ref": newsletter_id,
         },
         "scheduledFor": scheduled_for,
-        "status": "pending",
+        "status": "pending" if is_valid else "cancelled",
         "deliveryStats": {
             "recipientCount": 0,
             "deliveredCount": 0,
@@ -211,14 +224,15 @@ def create_sanity_editorial_documents(
     }
 
     # 6. Assemble atomic mutations array
-    # Uses createIfNotExists for themes, and createOrReplace for the three edition docs
+    # Create initial records only. Retrying an uncertain request must not overwrite
+    # edits, review decisions, or delivery state already written in Sanity.
     mutations: List[Dict[str, Any]] = []
     for th in STANDARD_THEMES:
         mutations.append({"createIfNotExists": th})
 
-    mutations.append({"createOrReplace": edition_doc})
-    mutations.append({"createOrReplace": workflow_doc})
-    mutations.append({"createOrReplace": delivery_doc})
+    mutations.append({"createIfNotExists": edition_doc})
+    mutations.append({"createIfNotExists": workflow_doc})
+    mutations.append({"createIfNotExists": delivery_doc})
 
     # 7. Execute atomic mutation via Sanity Content Lake REST API
     resolved_token = token or get_sanity_token()

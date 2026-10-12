@@ -64,19 +64,19 @@ class TestSanityEditorialOperation(unittest.TestCase):
 
         # Find documents in mutations
         edition_mut = next(
-            m["createOrReplace"]
+            m["createIfNotExists"]
             for m in mutations
-            if "createOrReplace" in m and m["createOrReplace"]["_type"] == "newsletterEdition"
+            if "createIfNotExists" in m and m["createIfNotExists"]["_type"] == "newsletterEdition"
         )
         workflow_mut = next(
-            m["createOrReplace"]
+            m["createIfNotExists"]
             for m in mutations
-            if "createOrReplace" in m and m["createOrReplace"]["_type"] == "editorialWorkflow"
+            if "createIfNotExists" in m and m["createIfNotExists"]["_type"] == "editorialWorkflow"
         )
         delivery_mut = next(
-            m["createOrReplace"]
+            m["createIfNotExists"]
             for m in mutations
-            if "createOrReplace" in m and m["createOrReplace"]["_type"] == "delivery"
+            if "createIfNotExists" in m and m["createIfNotExists"]["_type"] == "delivery"
         )
 
         # Newsletter assertions
@@ -142,6 +142,41 @@ class TestSanityEditorialOperation(unittest.TestCase):
         self.assertEqual(res3["newsletterId"], res4["newsletterId"])
         self.assertEqual(res3["workflowId"], res4["workflowId"])
         self.assertEqual(res3["deliveryId"], res4["deliveryId"])
+
+        mutations = mock_post.call_args[1]["json"]["mutations"]
+        editorial_mutations = [
+            mutation
+            for mutation in mutations
+            if mutation.get("createIfNotExists", {}).get("_type")
+            in {"newsletterEdition", "editorialWorkflow", "delivery"}
+        ]
+        self.assertEqual(len(editorial_mutations), 3)
+        self.assertFalse(any("createOrReplace" in mutation for mutation in mutations))
+
+    @patch("helpers.sanity_editorial.get_sanity_token", return_value="test-sanity-token")
+    @patch("requests.post")
+    def test_invalid_date_stays_in_draft(self, mock_post, mock_token):
+        mock_response = MagicMock(status_code=200)
+        mock_post.return_value = mock_response
+
+        create_sanity_editorial_documents(self.valid_data, is_valid=False)
+
+        mutations = mock_post.call_args[1]["json"]["mutations"]
+        edition = next(
+            mutation["createIfNotExists"]
+            for mutation in mutations
+            if mutation.get("createIfNotExists", {}).get("_type") == "newsletterEdition"
+        )
+        workflow = next(
+            mutation["createIfNotExists"]
+            for mutation in mutations
+            if mutation.get("createIfNotExists", {}).get("_type") == "editorialWorkflow"
+        )
+
+        self.assertEqual(edition["status"], "draft")
+        self.assertFalse(edition["validation"]["dateValid"])
+        self.assertEqual(workflow["currentStage"], "draft")
+        self.assertEqual([entry["stage"] for entry in workflow["history"]], ["received", "processing", "draft"])
 
     @patch("helpers.sanity_editorial.get_sanity_token", return_value="test-sanity-token")
     @patch("requests.post")

@@ -10,7 +10,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, Request, Query
-from fastapi.responses import JSONResponse, HTMLResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from contextlib import asynccontextmanager
@@ -103,7 +103,7 @@ if settings.cors_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins_list,
-    allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app$",
+    allow_origin_regex=r"https://newsletter-herald(-[a-zA-Z0-9-]+)?\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -347,10 +347,11 @@ async def upload_summary(
                 sanity_doc_ids = await run_in_threadpool(
                     create_sanity_editorial_documents,
                     editorial_payload,
+                    is_valid=is_valid,
                 )
                 sanity_result = {
                     "synced": True,
-                    "status": "awaiting_review",
+                    "status": "awaiting_review" if is_valid else "draft",
                     "newsletterId": sanity_doc_ids.get("newsletterId"),
                     "workflowId": sanity_doc_ids.get("workflowId"),
                     "deliveryId": sanity_doc_ids.get("deliveryId"),
@@ -1224,7 +1225,9 @@ async def subscribe_user(data: SubscriberRequest):
 
 
 @app.post("/subscribers/batch")
-async def batch_subscribe_users(data: BatchSubscribersRequest):
+async def batch_subscribe_users(
+    data: BatchSubscribersRequest, _: None = Depends(verify_api_key)
+):
     """
     Imports a list of subscriber emails in batch (e.g. from Gmail export or CSV).
     """
@@ -1341,7 +1344,9 @@ async def update_subscriber(subscriber_id: int, data: UpdateSubscriberRequest):
 
 
 @app.delete("/subscribers/{subscriber_id}")
-async def delete_subscriber(subscriber_id: int):
+async def delete_subscriber(
+    subscriber_id: int, _: None = Depends(verify_api_key)
+):
     """
     Deletes a subscriber from the mailing list.
     """
@@ -1697,29 +1702,43 @@ async def retry_sanity_sync(
             "uploader": newsletter["uploader"] or "system",
         }
 
+        is_valid = newsletter["status"] != "failed_validation"
         sanity_doc_ids = await run_in_threadpool(
             create_sanity_editorial_documents,
             editorial_payload,
+            is_valid=is_valid,
         )
 
         logger.info(
             f"Sanity retry synchronization succeeded for newsletter {newsletter_id}: {sanity_doc_ids}"
         )
 
-        # 4. Notify local agent that review request is ready with Sanity link
-        await notify_agent(
-            "review_request",
-            {
-                "newsletter_id": newsletter_id,
-                "title": summary_row["title"],
-                "summary": summary_row["summary"],
-                "target_sunday": target_sunday,
-                "status": newsletter["status"],
-                "sanity_edition_id": sanity_doc_ids.get("newsletterId"),
-                "sanity_workflow_id": sanity_doc_ids.get("workflowId"),
-                "sanity_delivery_id": sanity_doc_ids.get("deliveryId"),
-            },
-        )
+        # 4. Notify the agent with a state-appropriate event.
+        if is_valid:
+            await notify_agent(
+                "review_request",
+                {
+                    "newsletter_id": newsletter_id,
+                    "title": summary_row["title"],
+                    "summary": summary_row["summary"],
+                    "target_sunday": target_sunday,
+                    "status": "awaiting_review",
+                    "sanity_edition_id": sanity_doc_ids.get("newsletterId"),
+                    "sanity_workflow_id": sanity_doc_ids.get("workflowId"),
+                    "sanity_delivery_id": sanity_doc_ids.get("deliveryId"),
+                },
+            )
+        else:
+            await notify_agent(
+                "validation_alert",
+                {
+                    "newsletter_id": newsletter_id,
+                    "filename": newsletter["filename"],
+                    "target_sunday": target_sunday,
+                    "status": newsletter["status"],
+                    "error_message": "Date validation failed; correct the date before review.",
+                },
+            )
 
         return JSONResponse(
             content={
@@ -1727,7 +1746,7 @@ async def retry_sanity_sync(
                 "newsletter_id": newsletter_id,
                 "sanity": {
                     "synced": True,
-                    "status": "awaiting_review",
+                    "status": "awaiting_review" if is_valid else "draft",
                     "newsletterId": sanity_doc_ids.get("newsletterId"),
                     "workflowId": sanity_doc_ids.get("workflowId"),
                     "deliveryId": sanity_doc_ids.get("deliveryId"),

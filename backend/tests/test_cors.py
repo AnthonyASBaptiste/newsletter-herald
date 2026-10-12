@@ -4,15 +4,15 @@ from fastapi.testclient import TestClient
 from main import app
 
 # The CORS origin regex configured in main.py
-CORS_ORIGIN_REGEX = r"https://[a-zA-Z0-9-]+\.vercel\.app$"
+CORS_ORIGIN_REGEX = r"https://newsletter-herald(-[a-zA-Z0-9-]+)?\.vercel\.app$"
 
 def test_cors_origin_regex_valid():
     pattern = re.compile(CORS_ORIGIN_REGEX)
     valid_origins = [
         "https://newsletter-herald.vercel.app",
         "https://newsletter-herald-git-main.vercel.app",
-        "https://preview-123.vercel.app",
-        "https://a-b-c.vercel.app",
+        "https://newsletter-herald-preview-123.vercel.app",
+        "https://newsletter-herald-abc.vercel.app",
     ]
     for origin in valid_origins:
         assert pattern.match(origin) is not None, f"Expected {origin} to match CORS origin regex"
@@ -22,6 +22,9 @@ def test_cors_origin_regex_invalid():
     invalid_origins = [
         "https://newsletter-herald.vercel.app.attacker.com",
         "https://attacker.vercel.app.evil.com",
+        "https://attacker.vercel.app",
+        "https://preview-123.vercel.app",
+        "https://a-b-c.vercel.app",
         "http://newsletter-herald.vercel.app",
         "https://evilvercel.app",
         "https://vercel.app.attacker.com",
@@ -44,12 +47,21 @@ def test_cors_middleware_integration():
     )
     assert valid_resp.headers.get("access-control-allow-origin") == "https://newsletter-herald-preview.vercel.app"
 
-    # Malicious bypass origin rejected
-    invalid_resp = client.options(
+    # Malicious bypass / non-project origin rejected
+    invalid_resp_1 = client.options(
         "/",
         headers={
             "Origin": "https://newsletter-herald.vercel.app.attacker.com",
             "Access-Control-Request-Method": "GET",
         },
     )
-    assert invalid_resp.headers.get("access-control-allow-origin") is None
+    assert invalid_resp_1.headers.get("access-control-allow-origin") is None
+
+    invalid_resp_2 = client.options(
+        "/",
+        headers={
+            "Origin": "https://attacker-app.vercel.app",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert invalid_resp_2.headers.get("access-control-allow-origin") is None

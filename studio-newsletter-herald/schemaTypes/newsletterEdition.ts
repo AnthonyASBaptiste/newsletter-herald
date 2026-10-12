@@ -93,6 +93,20 @@ export const newsletterEdition = defineType({
       ],
     }),
     defineField({
+      name: 'workflow',
+      title: 'Editorial Workflow',
+      description: 'The workflow record tracking review and approval for this edition',
+      type: 'reference',
+      to: [{type: 'editorialWorkflow'}],
+    }),
+    defineField({
+      name: 'delivery',
+      title: 'Delivery Record',
+      description: 'The delivery record associated with this edition',
+      type: 'reference',
+      to: [{type: 'delivery'}],
+    }),
+    defineField({
       name: 'summary',
       title: 'Summary',
       description: 'Structured two-paragraph editorial digest synthesized for parishioners',
