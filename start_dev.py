@@ -19,16 +19,15 @@ def start_services():
     
     python_exe = "python"
     venv_exists = False
-    if os.name == 'nt':
-        venv_python = os.path.join(backend_dir, "venv", "Scripts", "python.exe")
-        if os.path.exists(venv_python):
-            python_exe = venv_python
+    for venv_name in [".venv", "venv"]:
+        if os.name == 'nt':
+            candidate = os.path.join(backend_dir, venv_name, "Scripts", "python.exe")
+        else:
+            candidate = os.path.join(backend_dir, venv_name, "bin", "python")
+        if os.path.exists(candidate):
+            python_exe = candidate
             venv_exists = True
-    else:
-        venv_python = os.path.join(backend_dir, "venv", "bin", "python")
-        if os.path.exists(venv_python):
-            python_exe = venv_python
-            venv_exists = True
+            break
 
     # Check if uvicorn is installed in the selected python environment
     try:

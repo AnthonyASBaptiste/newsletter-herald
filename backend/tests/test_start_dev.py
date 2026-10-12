@@ -38,3 +38,28 @@ def test_start_services_no_shell_true(mock_check_call, mock_popen):
     for call_args in mock_popen.call_args_list:
         args, kwargs = call_args
         assert kwargs.get("shell") is not True, "subprocess.Popen should not use shell=True"
+
+
+# Regression: ISSUE-002 — support .venv in start_dev.py
+# Found by /qa on 2026-10-12
+# Report: .gstack/qa-reports/run-20261012194003Z/qa-report-backend-2026-10-12.md
+@patch("start_dev.subprocess.Popen")
+@patch("start_dev.subprocess.check_call")
+def test_start_services_detects_dot_venv(mock_check_call, mock_popen):
+    mock_process = MagicMock()
+    mock_process.poll.return_value = None
+    mock_popen.return_value = mock_process
+
+    def fake_exists(path):
+        return ".venv" in path
+
+    with patch("os.path.exists", side_effect=fake_exists), \
+         patch("start_dev.time.sleep", side_effect=mock_sleep_side_effect()):
+        try:
+            start_dev.start_services()
+        except SystemExit:
+            pass
+
+    backend_call_args = mock_popen.call_args_list[0]
+    cmd = backend_call_args[0][0]
+    assert ".venv" in cmd[0], f"Expected .venv python executable, got {cmd[0]}"
