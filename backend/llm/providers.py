@@ -1,7 +1,7 @@
 import requests
 import httpx
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from config import get_settings
 from helpers.text_utils import count_tokens

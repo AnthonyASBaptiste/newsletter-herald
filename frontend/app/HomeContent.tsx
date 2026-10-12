@@ -124,6 +124,11 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   const [hasMoreBackend, setHasMoreBackend] = useState<boolean>(true);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  const selectTag = (tag: string | null) => {
+    setSelectedTag(tag);
+    setVisibleCount(INITIAL_BATCH);
+  };
+
   const fetchNewsletters = useCallback(async () => {
     setFetchingNewsletters(true);
     try {
@@ -182,10 +187,6 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   }, [backendUrl, loadingMore, hasMoreBackend, publicNewsletters.length]);
 
   useEffect(() => {
-    setVisibleCount(INITIAL_BATCH);
-  }, [selectedTag]);
-
-  useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
 
@@ -220,10 +221,11 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   }, [backendUrl]);
 
   useEffect(() => {
-    fetchNewsletters();
-    if (user) {
-      fetchSubscribersCount();
-    }
+    const timer = window.setTimeout(() => {
+      void fetchNewsletters();
+      if (user) void fetchSubscribersCount();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [user, fetchNewsletters, fetchSubscribersCount]);
 
   if (user && !hasAdminAccess) {
@@ -947,7 +949,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               >
                 <Chip
                   label="All Issues"
-                  onClick={() => setSelectedTag(null)}
+                  onClick={() => selectTag(null)}
                   color={selectedTag === null ? "primary" : "default"}
                   variant={selectedTag === null ? "filled" : "outlined"}
                   sx={{ fontWeight: 600, borderRadius: '980px', px: 1.5 }}
@@ -956,7 +958,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                   <Chip
                     key={tag}
                     label={tag.replace(/-/g, ' ')}
-                    onClick={() => setSelectedTag(tag)}
+                    onClick={() => selectTag(tag)}
                     color={selectedTag === tag ? "primary" : "default"}
                     variant={selectedTag === tag ? "filled" : "outlined"}
                     sx={{ fontWeight: 600, textTransform: 'capitalize', borderRadius: '980px', px: 1.5 }}
@@ -986,7 +988,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               return (
                 <Box sx={{ textAlign: 'center', py: 8, opacity: 0.6 }}>
                   <Typography variant="body1">No newsletters match the filter category &quot;{selectedTag}&quot;.</Typography>
-                  <Button variant="text" onClick={() => setSelectedTag(null)} sx={{ mt: 1, textTransform: 'none' }}>
+                  <Button variant="text" onClick={() => selectTag(null)} sx={{ mt: 1, textTransform: 'none' }}>
                     Clear Filter
                   </Button>
                 </Box>
@@ -1067,7 +1069,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
                                     variant="outlined"
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setSelectedTag(trimmed === selectedTag ? null : trimmed);
+                                      selectTag(trimmed === selectedTag ? null : trimmed);
                                     }}
                                     sx={{ 
                                       fontSize: '0.7rem', 

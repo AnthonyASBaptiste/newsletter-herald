@@ -75,8 +75,9 @@ async def test_regenerate_newsletter_summary_xss(
         "liturgical_year": "C"
     }
 
-    # Send request to regenerate endpoint with html accept header
-    response = client.get("/newsletters/1/regenerate", headers={"accept": "text/html"})
+    # Send request to the authenticated regenerate endpoint with html accept header
+    headers = {"accept": "text/html", "X-API-Key": settings.api_key}
+    response = client.get("/newsletters/1/regenerate", headers=headers)
 
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]

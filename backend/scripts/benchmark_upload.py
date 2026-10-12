@@ -9,7 +9,6 @@ sys.path.append(backend_dir)
 
 from db.setup import database
 from db.models import newsletters
-from helpers.text_utils import sanitize_filename
 
 
 async def run_benchmark():

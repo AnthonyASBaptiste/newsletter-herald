@@ -94,18 +94,21 @@ class TestSanityIngestionFlow(unittest.TestCase):
         call_kwargs = mock_session.post.call_args[1]
         mutations = call_kwargs["json"]["mutations"]
         mutation_types = [list(m.keys())[0] for m in mutations]
-        self.assertIn("createOrReplace", mutation_types)
+        self.assertIn("createIfNotExists", mutation_types)
+        self.assertNotIn("createOrReplace", mutation_types)
 
         # Inspect newsletterEdition
-        edition_mutations = [m["createOrReplace"] for m in mutations if "createOrReplace" in m and m["createOrReplace"].get("_type") == "newsletterEdition"]
+        edition_mutations = [m["createIfNotExists"] for m in mutations if "createIfNotExists" in m and m["createIfNotExists"].get("_type") == "newsletterEdition"]
         self.assertEqual(len(edition_mutations), 1)
         edition = edition_mutations[0]
         self.assertEqual(edition["_id"], "edition-herald-42")
         self.assertEqual(edition["status"], "awaiting_review")
         self.assertEqual(edition["primaryTheme"]["_ref"], "theme-community")
+        self.assertEqual(edition["workflow"]["_ref"], "workflow-herald-42")
+        self.assertEqual(edition["delivery"]["_ref"], "delivery-herald-42")
 
         # Inspect editorialWorkflow
-        wf_mutations = [m["createOrReplace"] for m in mutations if "createOrReplace" in m and m["createOrReplace"].get("_type") == "editorialWorkflow"]
+        wf_mutations = [m["createIfNotExists"] for m in mutations if "createIfNotExists" in m and m["createIfNotExists"].get("_type") == "editorialWorkflow"]
         self.assertEqual(len(wf_mutations), 1)
         wf = wf_mutations[0]
         self.assertEqual(wf["_id"], "workflow-herald-42")
@@ -116,7 +119,7 @@ class TestSanityIngestionFlow(unittest.TestCase):
         self.assertEqual(stages, ["received", "processing", "draft", "awaiting_review"])
 
         # Inspect delivery
-        del_mutations = [m["createOrReplace"] for m in mutations if "createOrReplace" in m and m["createOrReplace"].get("_type") == "delivery"]
+        del_mutations = [m["createIfNotExists"] for m in mutations if "createIfNotExists" in m and m["createIfNotExists"].get("_type") == "delivery"]
         self.assertEqual(len(del_mutations), 1)
         delivery = del_mutations[0]
         self.assertEqual(delivery["_id"], "delivery-herald-42")
@@ -180,6 +183,36 @@ class TestSanityIngestionFlow(unittest.TestCase):
 
 
 class TestIngestionEndpointLogic(unittest.IsolatedAsyncioTestCase):
+
+    async def test_retry_of_invalid_newsletter_sends_validation_alert(self):
+        from main import retry_sanity_sync
+
+        newsletter = {
+            "target_sunday": datetime.date(2026, 3, 8),
+            "schedule_date": None,
+            "tags": "",
+            "filename": "invalid-date.pdf",
+            "drive_web_view_link": "https://example.test/invalid-date.pdf",
+            "uploader": "editor@example.test",
+            "status": "failed_validation",
+        }
+        summary = {"title": "Parish Newsletter", "summary": "An editorial summary."}
+
+        with (
+            patch("main.database.fetch_one", new_callable=AsyncMock, side_effect=[newsletter, summary]),
+            patch("main.run_in_threadpool", new_callable=AsyncMock, return_value={
+                "newsletterId": "edition-herald-55",
+                "workflowId": "workflow-herald-55",
+                "deliveryId": "delivery-herald-55",
+            }) as mock_create,
+            patch("main.notify_agent", new_callable=AsyncMock) as mock_notify,
+        ):
+            await retry_sanity_sync(55)
+
+        self.assertFalse(mock_create.call_args.kwargs["is_valid"])
+        mock_notify.assert_awaited_once()
+        self.assertEqual(mock_notify.call_args.args[0], "validation_alert")
+        self.assertEqual(mock_notify.call_args.args[1]["status"], "failed_validation")
 
     async def test_notify_agent_formats_sanity_sync_failed(self):
         """Verifies that sanity_sync_failed notifications are structured with retry links."""
