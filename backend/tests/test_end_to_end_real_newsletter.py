@@ -22,6 +22,61 @@ class TestEndToEndRealNewsletterIngestion(unittest.TestCase):
         self.settings = get_settings()
         self.headers = {"X-API-Key": self.settings.api_key}
 
+    def test_upload_requires_api_key(self):
+        response = self.client.post(
+            "/upload-document",
+            files={
+                "file": (
+                    "newsletter.pdf",
+                    io.BytesIO(b"%PDF-1.7"),
+                    "application/pdf",
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_upload_rejects_files_over_20_mib(self):
+        response = self.client.post(
+            "/upload-document",
+            headers=self.headers,
+            files={
+                "file": (
+                    "newsletter.pdf",
+                    io.BytesIO(b"x" * (20 * 1024 * 1024 + 1)),
+                    "application/pdf",
+                )
+            },
+        )
+
+        self.assertEqual(response.status_code, 413)
+
+    @patch("main.upload_to_drive", return_value=(None, None))
+    @patch("main.choose_llm_and_summarize")
+    @patch("main.database.execute", new_callable=AsyncMock)
+    def test_upload_reports_storage_failure(
+        self, mock_db_execute, mock_summarize, mock_upload_drive
+    ):
+        mock_summarize.return_value = {"title": "Test", "summary": "Test summary"}
+
+        with open(PDF_PATH, "rb") as pdf_file:
+            response = self.client.post(
+                "/upload-document",
+                headers=self.headers,
+                files={
+                    "file": (
+                        "newsletter.pdf",
+                        io.BytesIO(pdf_file.read()),
+                        "application/pdf",
+                    )
+                },
+            )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("could not be stored", response.json()["detail"])
+        mock_db_execute.assert_awaited_once()
+        mock_upload_drive.assert_called_once()
+
     @patch("main.upload_to_drive")
     @patch("main.choose_llm_and_summarize")
     @patch("helpers.sanity_editorial.create_sanity_editorial_documents")
@@ -89,11 +144,20 @@ class TestEndToEndRealNewsletterIngestion(unittest.TestCase):
         response = self.client.post(
             "/upload-document",
             headers=self.headers,
-            files={"file": (f"{target_sunday_file_fmt}-Newsletter.pdf", io.BytesIO(pdf_bytes), "application/pdf")},
+            files={
+                "file": (
+                    f"{target_sunday_file_fmt}-Newsletter.pdf",
+                    io.BytesIO(pdf_bytes),
+                    "application/octet-stream",
+                )
+            },
             data={"uploader": "pastor@church.org"},
         )
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            mock_upload_drive.call_args_list[0].args[2], "application/pdf"
+        )
         data = response.json()
 
         # 1. Verify response payload
