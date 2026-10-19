@@ -114,6 +114,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   const [editScheduledSaving, setEditScheduledSaving] = useState(false);
 
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:8000';
+  const MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024;
 
   // Infinite scroll & Pagination state
   const INITIAL_BATCH = 6;
@@ -265,7 +266,14 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
-      setFile(event.target.files[0]);
+      const selectedFile = event.target.files[0];
+      if (selectedFile.size > MAX_UPLOAD_SIZE_BYTES) {
+        setFile(null);
+        event.currentTarget.value = '';
+        setError('The selected file is larger than the 20 MiB upload limit.');
+        return;
+      }
+      setFile(selectedFile);
       setError(null);
     }
   };
@@ -273,6 +281,19 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
   const handleUpload = async () => {
     if (!file) {
       setError("Please select a file first.");
+      return;
+    }
+
+    const apiKey = process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '';
+    if (!apiKey) {
+      setError('Uploads are not configured: set NEXT_PUBLIC_INTERNAL_API_KEY for the frontend.');
+      return;
+    }
+    if (
+      process.env.NODE_ENV === 'production' &&
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?(?:\/|$)/i.test(backendUrl)
+    ) {
+      setError('Uploads are not configured: set NEXT_PUBLIC_BACKEND_API_URL to the deployed backend URL.');
       return;
     }
 
@@ -288,18 +309,31 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
         method: 'POST',
         body: formData,
         headers: {
-          'X-API-Key': process.env.NEXT_PUBLIC_INTERNAL_API_KEY || '', 
+          'X-API-Key': apiKey,
           'X-User-Email': userEmail || 'anonymous',
           'X-Demo-Mode': evalDemoMode ? 'true' : 'false',
         },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to upload document');
+      const responseBody = await response.text();
+      let data;
+      try {
+        data = JSON.parse(responseBody);
+      } catch {
+        throw new Error(
+          response.ok
+            ? 'The backend returned an invalid upload response.'
+            : `Upload failed with HTTP ${response.status}. Check the backend URL and upload size.`
+        );
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.detail || `Upload failed with HTTP ${response.status}.`);
+      }
+
+      if (!data.summary) {
+        throw new Error('The backend response did not include a newsletter summary.');
+      }
       setSummary(data.summary);
       
       // Initialize edit fields from AI response
@@ -319,7 +353,11 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
       }
     } catch (err) {
       const error = err as Error;
-      setError(error.message);
+      setError(
+        error.message === 'Failed to fetch'
+          ? `Could not reach the backend at ${backendUrl}. Check NEXT_PUBLIC_BACKEND_API_URL and the backend CORS configuration.`
+          : error.message
+      );
     } finally {
       setLoading(false);
     }
@@ -1191,7 +1229,7 @@ export function HomeContent({ forcePublic = false }: { forcePublic?: boolean }) 
               {file ? file.name : "Select bulletin document"}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              PDF or DOCX files up to 20MB
+              PDF or DOCX files up to 20 MiB
             </Typography>
           </Box>
 

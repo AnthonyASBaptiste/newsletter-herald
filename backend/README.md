@@ -67,3 +67,26 @@ The backend supports multiple strategies configured in `.env` via `LLM_STRATEGY`
 
 ## API Documentation
 Interactive docs are available at `http://localhost:8000/docs`.
+
+### Upload and process a newsletter
+
+Send one PDF or DOCX file as multipart form data to `POST /upload-document`. The
+multipart field must be named `file`; the endpoint requires the backend `API_KEY`
+in the `X-API-Key` header and accepts files up to 20 MiB. The filename extension
+determines the supported document type, so clients do not need to provide a
+particular MIME type.
+
+```bash
+curl -X POST "$BACKEND_URL/upload-document" \
+  -H "X-API-Key: $API_KEY" \
+  -H "X-User-Email: editor@example.org" \
+  -F "file=@newsletter.pdf"
+```
+
+A successful response includes the generated summary, date validation result, and
+newsletter record identifiers. The same endpoint is used by the web uploader. For
+the deployed frontend, configure `NEXT_PUBLIC_BACKEND_API_URL` with the backend's
+public base URL and `NEXT_PUBLIC_INTERNAL_API_KEY` with the matching API key.
+Invalid formats return `400`, missing or incorrect API keys return `401`, oversized
+files return `413`, unreadable documents return `422`, and storage failures return
+`503`.

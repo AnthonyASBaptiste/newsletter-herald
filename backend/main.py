@@ -44,6 +44,14 @@ settings = get_settings()
 # Create a logger for this module
 logger = logging.getLogger(__name__)
 
+MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024
+UPLOAD_CONTENT_TYPES = {
+    ".pdf": "application/pdf",
+    ".docx": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+}
+
 
 def sync_extract_text(contents: bytes, content_type: str) -> str:
     """
@@ -137,32 +145,50 @@ async def health_check() -> Dict[str, Any]:
         raise HTTPException(status_code=503, detail="Database connection failed")
 
 
-@app.post("/upload-document")
+@app.post(
+    "/upload-document",
+    summary="Upload and process a newsletter",
+    description=(
+        "Accepts one PDF or DOCX file in the multipart `file` field (maximum 20 MiB). "
+        "Requires the configured API key in the `X-API-Key` header."
+    ),
+)
 async def upload_summary(
     request: Request, file: UploadFile = File(...), _: None = Depends(verify_api_key)
 ) -> JSONResponse:
     """
-    Handles the uploading and summarization of document files.
+    Uploads a PDF or DOCX newsletter, extracts and summarizes its contents, and starts
+    the editorial workflow.
     """
     uploader = request.headers.get("x-user-email", "api_user")
     filename = file.filename
 
-    # Validate file type
-    accepted_types = [
-        "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ]
-    if file.content_type not in accepted_types:
-        logger.warning(f"Unsupported file type: {file.content_type}")
-        raise HTTPException(status_code=400, detail="Unsupported file type")
+    if not filename:
+        raise HTTPException(status_code=400, detail="A filename is required")
+
+    content_type = UPLOAD_CONTENT_TYPES.get(os.path.splitext(filename)[1].lower())
+    if not content_type:
+        logger.warning(f"Unsupported upload filename: {filename}")
+        raise HTTPException(status_code=400, detail="Upload a PDF or DOCX file")
+
+    if file.size is not None and file.size > MAX_UPLOAD_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail="File is too large; the maximum upload size is 20 MiB",
+        )
 
     try:
         # Read file contents
         contents = await file.read()
+        if len(contents) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="File is too large; the maximum upload size is 20 MiB",
+            )
 
         # Extract text from file
         try:
-            if file.content_type == "application/pdf":
+            if content_type == "application/pdf":
                 with tempfile.NamedTemporaryFile(
                     delete=False, suffix=".pdf"
                 ) as temp_file:
@@ -182,7 +208,7 @@ async def upload_summary(
         except Exception as e:
             logger.error(f"Error extracting text from file: {str(e)}")
             raise HTTPException(
-                status_code=500, detail=f"Error extracting text: {str(e)}"
+                status_code=422, detail=f"Could not read the uploaded document: {str(e)}"
             )
 
         # Generate summary
@@ -196,19 +222,24 @@ async def upload_summary(
 
             # Compress file if it's a PDF
             final_contents = contents
-            if file.content_type == "application/pdf":
+            if content_type == "application/pdf":
                 logger.info("Compressing PDF...")
                 final_contents = compress_pdf(contents)
 
             # Upload to Google Drive / R2
             logger.info("Uploading file to Google Drive")
             drive_file_id, web_view_link = upload_to_drive(
-                final_contents, standard_filename, file.content_type
+                final_contents, standard_filename, content_type
             )
+            if not drive_file_id:
+                raise HTTPException(
+                    status_code=503,
+                    detail="The newsletter file could not be stored; check the storage configuration.",
+                )
 
             # Generate and upload thumbnail if it's a PDF
             thumbnail_drive_id = None
-            if file.content_type == "application/pdf":
+            if content_type == "application/pdf":
                 try:
                     logger.info("Generating PDF thumbnail")
                     thumbnail_data = generate_pdf_thumbnail(io.BytesIO(final_contents))
@@ -505,6 +536,8 @@ async def upload_summary(
                         "sanity_delivery_id": summary.get("sanity_delivery_id"),
                     },
                 )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"LLM error: {str(e)}")
             raise HTTPException(status_code=500, detail=f"LLM error: {str(e)}")
